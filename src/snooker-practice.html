@@ -1,0 +1,1127 @@
+<title>Snooker Practice Log</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: a single phone-first column, like a scorecard you carry to the table; tabs pinned to the bottom. */
+:root {
+  --bg: #eef2ee; --surface: #ffffff; --surface-2: #f5f8f5; --fg: #13201a; --muted: #5a6b61; --line: #d6dfd8;
+  --accent: #1d6b44; --accent-ink: #ffffff; --accent-soft: #dcebe2;
+  --good: #1d7a43; --warn: #a86a00; --bad: #b3261e; --best: #c2410c;
+  --ball-red: #c62828; --ball-yellow: #e0aa10; --ball-green: #2e7d32; --ball-brown: #7a4a26;
+  --ball-blue: #1e5bb8; --ball-pink: #e46aa0; --ball-black: #1b1b1b;
+  --f-display: "Bricolage Grotesque", "Avenir Next Condensed", system-ui, sans-serif;
+  --f-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 12px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0b130f; --surface: #131e18; --surface-2: #18251e; --fg: #e4ece6; --muted: #92a399; --line: #26362d;
+  --accent: #3fae76; --accent-ink: #06130c; --accent-soft: #1b3326;
+  --good: #4cc483; --warn: #e3a63b; --bad: #f2786f; --best: #fb923c;
+  --ball-black: #050505; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0b130f; --surface: #131e18; --surface-2: #18251e; --fg: #e4ece6; --muted: #92a399; --line: #26362d;
+  --accent: #3fae76; --accent-ink: #06130c; --accent-soft: #1b3326;
+  --good: #4cc483; --warn: #e3a63b; --bad: #f2786f; --best: #fb923c;
+  --ball-black: #050505; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 860px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header.top { padding-block: 18px 6px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--f-display); font-weight: 800; font-size: 20px; letter-spacing: -0.01em; }
+.brand svg { flex: none; }
+.sync { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.sync i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.sync[data-mode="cloud"] i { background: var(--good); }
+.sync[data-mode="local"] i { background: var(--warn); }
+main { padding-block: 8px calc(96px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 22px; }
+body.running main { padding-block-end: calc(24px + env(safe-area-inset-bottom, 0px)); }
+body.running nav.tabs { display: none; }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h1 { font-size: 30px; font-weight: 800; line-height: 1.1; }
+h2 { font-size: 19px; font-weight: 600; }
+h3 { font-size: 16px; font-weight: 600; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); font-weight: 600; }
+.num { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+.stack { display: grid; gap: 12px; min-width: 0; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.between { justify-content: space-between; }
+.grow { flex: 1 1 auto; min-width: 0; }
+
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.stat { background: var(--surface); padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+.stat b { font-family: var(--f-num); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--muted); }
+@media (max-width: 520px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.card.link { cursor: pointer; }
+.card.link:hover { border-color: var(--muted); }
+.list { display: grid; gap: 10px; }
+.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.drillline { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.drillline .grow { overflow-wrap: anywhere; }
+.ball { width: 12px; height: 12px; border-radius: 50%; flex: none; display: inline-block; box-shadow: inset -2px -2px 3px rgba(0,0,0,.25), 0 0 0 1px var(--line); }
+
+button, .btn { font: inherit; font-weight: 600; font-size: 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); padding: 9px 14px; cursor: pointer; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .card.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.big { min-height: 54px; font-size: 17px; padding-inline: 22px; }
+button.ghost { background: transparent; border-color: transparent; color: var(--muted); padding-inline: 10px; }
+button.ghost:hover { color: var(--fg); border-color: var(--line); }
+button.danger { color: var(--bad); }
+button.danger.armed { background: var(--bad); color: var(--surface); border-color: var(--bad); }
+button:disabled { opacity: .45; cursor: default; }
+
+label.field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 500; min-width: 0; }
+input, select, textarea { font: inherit; font-size: 16px; color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; min-height: 42px; width: 100%; min-width: 0; }
+textarea { min-height: 70px; resize: vertical; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; flex-wrap: wrap; }
+.seg button { border: 0; border-radius: 0; min-height: 38px; background: var(--surface); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.entry { display: grid; gap: 10px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { font: inherit; font-size: 13px; font-weight: 500; border-radius: 999px; border: 1px solid var(--line); padding: 6px 12px; background: var(--surface); color: var(--fg); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-height: 34px; }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.pill { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 9px; display: inline-block; white-space: nowrap; }
+.pill.good { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+.pill.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.pill.mute { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
+
+/* Charts */
+.chart { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--muted); font-family: var(--f-num); font-size: 16px; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .target { stroke: var(--warn); stroke-dasharray: 5 4; stroke-width: 1.5; }
+.chart .line { stroke: var(--accent); stroke-width: 2.5; fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.chart .area { fill: var(--accent); opacity: .12; }
+.chart .dot { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+.chart .dot.last { fill: var(--accent); }
+.chart .bestdot { fill: var(--best); }
+.chart .bar { fill: var(--accent); }
+.chart .bar.now { fill: var(--accent); opacity: .55; }
+.chart text.strong { fill: var(--fg); font-weight: 700; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 5px; background: var(--accent); border-radius: 2px; }
+.legend i.b { width: 9px; height: 9px; border-radius: 50%; background: var(--best); }
+.legend i.t { background: none; border-top: 2px dashed var(--warn); height: 0; }
+
+.empty { border: 1px dashed var(--line); border-radius: var(--r); padding: 22px 16px; text-align: center; color: var(--muted); display: grid; gap: 10px; justify-items: center; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; }
+td.r, th.r { text-align: right; font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+
+/* Table diagrams */
+.table { display: block; max-width: 100%; height: auto; }
+.tablebox { display: flex; justify-content: center; }
+.tablebox .table { height: var(--h, min(60vh, 620px)); width: auto; }
+.table.edit { touch-action: none; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+.thumb { width: 46px; flex: none; }
+.dg-editor { display: grid; gap: 10px; }
+.tg { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tool { min-height: 38px; font-size: 13px; padding: 6px 11px; }
+.tool[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.sw { width: 38px; height: 38px; padding: 0; border-radius: 50%; }
+.sw span { width: 22px; height: 22px; border-radius: 50%; display: block; box-shadow: inset -3px -3px 4px rgba(0,0,0,.3), 0 0 0 1px rgba(0,0,0,.35); }
+.sw[aria-pressed="true"] { outline: 3px solid var(--accent); outline-offset: 1px; }
+.tsep { width: 1px; align-self: stretch; background: var(--line); margin-inline: 2px; }
+
+/* Session runner */
+.runhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.timerbox { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 16px; }
+.timer { font-family: var(--f-num); font-variant-numeric: tabular-nums; font-size: 54px; font-weight: 700; line-height: 1; }
+.timer.over { color: var(--bad); }
+.timer.paused { opacity: .5; }
+.track { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; border: 1px solid var(--line); }
+.track span { display: block; height: 100%; background: var(--accent); width: 0; }
+.setupgrid { display: grid; gap: 16px; }
+@media (min-width: 760px) { .setupgrid { grid-template-columns: minmax(0, 330px) minmax(0, 1fr); align-items: start; } }
+.runcols { display: grid; gap: 16px; }
+.panetoggle { display: flex; }
+@media (max-width: 859px) {
+  .runcols[data-pane="pad"] .pane-ov { display: none; }
+  .runcols[data-pane="ov"] .pane-sc { display: none; }
+}
+@media (min-width: 860px) { .runcols { grid-template-columns: minmax(0, 320px) minmax(0, 1fr); align-items: start; } .panetoggle { display: none; } }
+.attempts { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; align-items: center; }
+.att { font-family: var(--f-num); font-size: 14px; padding: 3px 9px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }
+.att.top { border-color: var(--best); color: var(--best); }
+.display { font-family: var(--f-num); font-size: 44px; font-weight: 700; text-align: center; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); line-height: 1.2; min-height: 66px; }
+.display .of { font-size: 20px; color: var(--muted); font-weight: 500; }
+.err { color: var(--bad); min-height: 1.4em; font-size: 13px; text-align: center; }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pad button { min-height: 60px; font-size: 26px; font-family: var(--f-num); border-radius: 14px; }
+.pad button.ok { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-family: var(--f-body); font-size: 18px; }
+
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); z-index: 5; padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+nav.tabs .in { max-width: 860px; margin: 0 auto; display: grid; grid-template-columns: repeat(5, 1fr); }
+nav.tabs button { border: 0; border-radius: 0; background: transparent; color: var(--muted); flex-direction: column; gap: 2px; font-size: 11px; font-weight: 600; min-height: 60px; padding: 6px 2px; }
+nav.tabs button svg { width: 22px; height: 22px; }
+nav.tabs button[aria-current="page"] { color: var(--accent); }
+#toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom, 0px)); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 500; font-size: 14px; z-index: 20; max-width: calc(100% - 32px); box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="12" fill="var(--ball-red)"/><circle cx="9" cy="9" r="3.5" fill="#fff" opacity=".35"/></svg>
+      <span>Practice Log</span>
+    </div>
+    <span class="sync" id="sync" data-mode="connecting"><i></i><span>Connecting…</span></span>
+  </header>
+  <main id="view"></main>
+</div>
+<nav class="tabs" aria-label="Sections"><div class="in" id="tabs"></div></nav>
+<div id="toast" hidden></div>
+
+<script>
+(function () {
+"use strict";
+
+// ---------- Table geometry (millimetres; portrait, black end at the top, baulk at the bottom) ----------
+const TW = 1778, TL = 3569, CX = 889, BY = TL - 737, DR = 292, BR = 44, RAIL = 120; // balls drawn larger than life (real radius 26mm) so diagrams read on a phone
+const SPOTS = { yellow: [CX + DR, BY], green: [CX - DR, BY], brown: [CX, BY], blue: [CX, TL / 2], pink: [CX, TL / 4], black: [CX, 324] };
+const POCKETS = [[0, 0], [TW, 0], [0, TL / 2], [TW, TL / 2], [0, TL], [TW, TL]];
+const BALL_FILL = { cue: "#f4f1e6", red: "#c8102e", yellow: "#f3c300", green: "#159447", brown: "#7a4a1f", blue: "#1f55d6", pink: "#ff86b5", black: "#121212" };
+const COLOURS = ["yellow", "green", "brown", "blue", "pink", "black"];
+const B = (t, x, y) => ({ t, x: Math.round(x), y: Math.round(y) });
+const LN = (x1, y1, x2, y2, dash, arrow = true) => ({ x1: Math.round(x1), y1: Math.round(y1), x2: Math.round(x2), y2: Math.round(y2), dash: !!dash, arrow });
+const onSpots = only => (only || COLOURS).map(c => B(c, SPOTS[c][0], SPOTS[c][1]));
+const between = (a, b, n) => Array.from({ length: n }, (_, k) => a + (b - a) * (k + 1) / (n + 1));
+function pack() {
+  const out = [], apexY = SPOTS.pink[1] - 2 * BR - 4, s = 2 * BR + 1;
+  for (let r = 0; r < 5; r++) for (let i = 0; i <= r; i++) out.push(B("red", CX + (i - r / 2) * s, apexY - r * s * 0.866));
+  return out;
+}
+const emptyDg = () => ({ balls: [], lines: [], zones: [] });
+
+// ---------- Defaults ----------
+const CATS = ["Potting", "Break-building", "Cue ball control", "Sighting/aiming", "Safety", "Long game", "Other"];
+const CAT_BALL = { "Potting": "red", "Break-building": "black", "Cue ball control": "pink", "Sighting/aiming": "green", "Safety": "blue", "Long game": "brown", "Other": "yellow" };
+const blueY = TL / 2, pinkY = TL / 4;
+const DEFAULT_DRILLS = [
+  { id: "d-lineup", name: "The Line-up", cat: "Break-building", metric: "break", per: 10, max: "", target: 40, minutes: 20,
+    how: "All 15 reds in a line up the middle of the table between the colours, colours on their spots. Play it as a break, red then colour.",
+    diagram: { balls: [...onSpots(), ...between(BY, blueY, 5).map(y => B("red", CX, y)), ...between(blueY, pinkY, 6).map(y => B("red", CX, y)), ...between(pinkY, 324, 4).map(y => B("red", CX, y)), B("cue", 760, 2960)], lines: [], zones: [] } },
+  { id: "d-colours", name: "Colours clearance", cat: "Break-building", metric: "break", per: 10, max: "", target: 27, minutes: 10,
+    how: "Colours on their spots, cue ball in hand in the D. Clear yellow through to black.",
+    diagram: { balls: [...onSpots(), B("cue", 720, 2950)], lines: [], zones: [] } },
+  { id: "d-cross", name: "The Cross", cat: "Break-building", metric: "break", per: 10, max: "", target: 30, minutes: 15,
+    how: "Four reds around the blue and four around the pink, one each side. Colours on spots. Clear reds with colours.",
+    diagram: { balls: [...onSpots(), ...[blueY, pinkY].flatMap(y => [B("red", CX - 125, y), B("red", CX + 125, y), B("red", CX, y - 125), B("red", CX, y + 125)]), B("cue", 760, 2960)], lines: [], zones: [] } },
+  { id: "d-longblue", name: "Long blues", cat: "Potting", metric: "outof", per: 10, target: 70, minutes: 10,
+    how: "Blue on its spot, cue ball on the baulk line in line with the top corner. Pot it, reset, repeat. Swap sides each attempt.",
+    diagram: { balls: [B("blue", CX, blueY), B("cue", 367, BY)], lines: [LN(367, BY, CX, blueY), LN(CX, blueY, TW, 0, true)], zones: [] } },
+  { id: "d-blackspot", name: "Blacks in a row", cat: "Potting", metric: "score", per: 10, max: 99, target: 10, minutes: 10,
+    how: "Black on its spot, cue ball placed for a slight cut. Pot it, respot it, and keep going. Your score is how many you pot in a row.",
+    diagram: { balls: [B("black", CX, 324), B("cue", 1250, 640)], lines: [LN(1250, 640, CX, 324), LN(CX, 324, 0, 0, true)], zones: [] } },
+  { id: "d-longred", name: "Long straight reds", cat: "Long game", metric: "outof", per: 10, target: 60, minutes: 10,
+    how: "Red on a straight line to the top corner, cue ball near the baulk line on the same line. A full-length straight pot.",
+    diagram: { balls: [B("red", 600, 1100), B("cue", 1440, 2640)], lines: [LN(1440, 2640, 600, 1100), LN(600, 1100, 0, 0, true)], zones: [] } },
+  { id: "d-stun", name: "Stun to a stop", cat: "Cue ball control", metric: "outof", per: 10, target: 60, minutes: 10,
+    how: "Blue on its spot, cue ball straight across for a middle-pocket pot. It only counts if the cue ball stops dead.",
+    diagram: { balls: [B("blue", CX, blueY), B("cue", 1350, blueY)], lines: [LN(1350, blueY, CX, blueY), LN(CX, blueY, 0, blueY, true)], zones: [] } },
+  { id: "d-screw", name: "Screw back to the D", cat: "Cue ball control", metric: "outof", per: 10, target: 50, minutes: 10,
+    how: "Blue on its spot, cue ball on the line to the top corner. Pot the blue and screw the cue ball back into the D.",
+    diagram: { balls: [B("blue", CX, blueY), B("cue", 622, 2320)], lines: [LN(622, 2320, CX, blueY), LN(CX, blueY, TW, 0, true), LN(850, 1860, 760, 2950, true)], zones: [{ x: CX, y: 2960, r: 200 }] } },
+  { id: "d-lag", name: "Lag to the baulk cushion", cat: "Safety", metric: "outof", per: 10, target: 60, minutes: 10,
+    how: "Cue ball on the baulk line. Send it up to the top cushion and back. Count it if it finishes within a ball of the baulk cushion.",
+    diagram: { balls: [B("cue", 600, BY)], lines: [LN(600, BY, 600, 30), LN(650, 30, 650, 3480, true)], zones: [{ x: 650, y: 3490, r: 90 }] } },
+  { id: "d-safety", name: "Thin safety off the reds", cat: "Safety", metric: "outof", per: 10, target: 60, minutes: 10,
+    how: "Full pack, colours on spots, cue ball in the D. Thin the end red and bring the cue ball back to the baulk cushion.",
+    diagram: { balls: [...onSpots(), ...pack(), B("cue", 1050, 2900)], lines: [LN(1050, 2900, 1030, 655), LN(1040, 650, TW, 760, true, false), LN(TW, 760, 1000, 3450, true)], zones: [{ x: 1000, y: 3420, r: 150 }] } },
+  { id: "d-sight", name: "Cue ball over the spots", cat: "Sighting/aiming", metric: "outof", per: 10, target: 50, minutes: 10,
+    how: "Cue ball on the brown spot, nothing else on the table. Hit it straight over the blue, pink and black spots, off the top cushion and back. Count it if it comes back over the brown spot.",
+    diagram: { balls: [B("cue", CX, BY)], lines: [LN(CX, BY, CX, 40), LN(CX + 45, 40, CX + 45, BY - 60, true)], zones: [] } }
+];
+const DEFAULT_PLANS = [
+  { id: "p-fundamentals", name: "Fundamentals", items: [
+    { drillId: "d-sight", minutes: 10 }, { drillId: "d-stun", minutes: 10 }, { drillId: "d-longblue", minutes: 10 },
+    { drillId: "d-blackspot", minutes: 10 }, { drillId: "d-lineup", minutes: 20 } ] },
+  { id: "p-breaks", name: "Break-building night", items: [
+    { drillId: "d-colours", minutes: 15 }, { drillId: "d-cross", minutes: 25 }, { drillId: "d-lineup", minutes: 30 } ] }
+];
+
+// ---------- Helpers ----------
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const clone = o => JSON.parse(JSON.stringify(o));
+const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const iso = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+const todayISO = () => iso(new Date());
+const parseISO = s => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+const fmtDate = s => parseISO(s).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+const fmtShort = s => parseISO(s).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+const weekStart = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+const mmss = s => { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+const LS = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+};
+const ball = c => `<span class="ball" style="background:var(--ball-${CAT_BALL[c] || "yellow"})" aria-hidden="true"></span>`;
+const COARSE = matchMedia("(pointer: coarse)").matches || matchMedia("(max-width: 600px)").matches;
+
+// ---------- Data normalisation (also upgrades version 1 data) ----------
+function normDrill(d) {
+  d = Object.assign({}, d);
+  d.per = +d.per || +d.attempts || 10; delete d.attempts;
+  if (!["outof", "score", "break"].includes(d.metric)) d.metric = "outof";
+  d.minutes = +d.minutes || 10;
+  // Breaks aren't capped: a drill can be completed several times in a row. Clear the old default caps.
+  if (d.metric === "break" && (+d.max === 147 || (d.id === "d-colours" && +d.max === 27))) d.max = "";
+  if (!CATS.includes(d.cat)) d.cat = "Other";
+  if (!d.diagram) { const def = DEFAULT_DRILLS.find(x => x.id === d.id); d.diagram = def ? clone(def.diagram) : emptyDg(); }
+  ["balls", "lines", "zones"].forEach(k => { if (!Array.isArray(d.diagram[k])) d.diagram[k] = []; });
+  return d;
+}
+function normalizeLib(l) {
+  if (!l || !Array.isArray(l.drills)) return { v: 2, drills: clone(DEFAULT_DRILLS), plans: clone(DEFAULT_PLANS) };
+  if (l.v !== 2) {
+    l = clone(l);
+    l.drills = l.drills.map(d => { const def = DEFAULT_DRILLS.find(x => x.id === d.id); if (def) return clone(def); if (d.metric === "score") d.metric = "break"; return d; });
+    DEFAULT_DRILLS.forEach(def => { if (!l.drills.some(d => d.id === def.id)) l.drills.push(clone(def)); });
+    l.plans = (l.plans || []).map(p => { const def = DEFAULT_PLANS.find(x => x.id === p.id); return def ? clone(def) : p; });
+  }
+  const drills = l.drills.map(normDrill);
+  const plans = (l.plans || []).map(p => ({ id: p.id, name: p.name || "Session", items: (p.items || []).map(it => {
+    const d = drills.find(x => x.id === it.drillId); return { drillId: it.drillId, minutes: +it.minutes || (d ? d.minutes : 10) }; }) }));
+  return { v: 2, drills, plans };
+}
+function normLog(l) {
+  l = Object.assign({}, l);
+  l.entries = (l.entries || []).map(e => {
+    e = Object.assign({}, e);
+    if (!Array.isArray(e.scores)) {
+      if (e.metric === "outof") { e.per = +e.attempts || 10; e.scores = e.attempts ? [Math.min(+e.made || 0, e.per)] : []; }
+      else { e.metric = "break"; e.scores = e.score === "" || e.score == null ? [] : [+e.score]; }
+      delete e.made; delete e.attempts; delete e.score;
+    }
+    e.per = +e.per || 10; e.seconds = +e.seconds || 0;
+    return e;
+  });
+  return l;
+}
+
+// ---------- State ----------
+const storedLib = LS.get("snk.lib");
+let lib = normalizeLib(storedLib);
+let logs = (LS.get("snk.logs") || []).filter(l => l && l.id && l.date).map(normLog);
+let route = "home";
+let draft = null;          // working copy for editors, drill view and the session runner
+let ed = null;             // diagram editor state
+let progressDrill = null;
+let armed = null, armTimer = null;
+let cloud = null;
+let writeQ = Promise.resolve();
+const drillById = id => lib.drills.find(d => d.id === id);
+const sortLogs = () => logs.sort((a, b) => (b.date + (b.created || "")).localeCompare(a.date + (a.created || "")));
+sortLogs();
+if (!storedLib || storedLib.v !== 2) LS.set("snk.lib", lib);
+
+// ---------- Persistence ----------
+function queue(fn) {
+  writeQ = writeQ.then(fn).catch(e => {
+    console.error(e);
+    toast(e && e.code === "quota_exceeded" ? "Storage is full. Delete some old sessions to make room." : "Couldn't save to your account. Your change is kept on this device.");
+  });
+}
+function saveLib() {
+  LS.set("snk.lib", lib);
+  if (cloud) { const body = clone(lib); queue(() => cloud.libRef.set(body)); }
+}
+function saveLog(log) {
+  logs = logs.filter(l => l.id !== log.id); logs.push(log); sortLogs();
+  LS.set("snk.logs", logs);
+  if (cloud) { const body = clone(log); queue(() => cloud.logsCol.doc(log.id).set(body)); }
+}
+function removeLog(id) {
+  logs = logs.filter(l => l.id !== id);
+  LS.set("snk.logs", logs);
+  if (cloud) queue(() => cloud.logsCol.doc(id).delete());
+}
+function setSync(mode) {
+  const el = $("#sync"); el.dataset.mode = mode;
+  el.querySelector("span").textContent = mode === "cloud" ? "Saved to your account" : mode === "local" ? "Saved on this device only" : "Connecting…";
+}
+async function connect() {
+  if (!window.claude || typeof window.claude.use !== "function") { setSync("local"); return; }
+  try {
+    const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+    const uid = user ? await user.id() : null;
+    if (!db || !uid) { setSync("local"); return; }
+    const libRef = db.doc("data/users/" + uid + "/library");
+    const logsCol = libRef.collection("logs");
+    let libSynced = false, logsSynced = false;
+    libRef.onSnapshot(snap => {
+      if (snap.exists) {
+        const raw = clone(snap.data());
+        lib = normalizeLib(raw); LS.set("snk.lib", lib);
+        if (!libSynced) { libSynced = true; cloud = cloud || { libRef, logsCol }; setSync("cloud"); }
+        if (raw.v !== 2) { const body = clone(lib); queue(() => libRef.set(body)); }
+        refresh();
+      } else if (!snap.metadata.fromCache && !libSynced) {
+        libSynced = true; cloud = cloud || { libRef, logsCol }; setSync("cloud");
+        const body = clone(lib); queue(() => libRef.set(body));
+      }
+    }, () => setSync("local"));
+    logsCol.onSnapshot(snap => {
+      if (snap.metadata.fromCache && snap.empty) return;
+      const remote = snap.docs.map(d => clone(d.data())).filter(l => l && l.id && l.date).map(normLog);
+      if (!logsSynced && !snap.metadata.fromCache) {
+        logsSynced = true;
+        if (!LS.get("snk.migrated")) {
+          const have = new Set(remote.map(r => r.id));
+          logs.filter(l => !have.has(l.id)).forEach(l => { const b = clone(l); queue(() => logsCol.doc(l.id).set(b)); remote.push(l); });
+          LS.set("snk.migrated", true);
+        }
+      }
+      logs = remote; sortLogs(); LS.set("snk.logs", logs);
+      refresh();
+    }, () => setSync("local"));
+  } catch (e) { console.error(e); setSync("local"); }
+}
+
+// ---------- Routing ----------
+const TABS = [
+  { id: "home", label: "Today", icon: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/>' },
+  { id: "plans", label: "Sessions", icon: '<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/>' },
+  { id: "drills", label: "Drills", icon: '<path d="M4 20 20 4"/><circle cx="18" cy="17" r="3"/>' },
+  { id: "progress", label: "Progress", icon: '<path d="M4 19h16"/><path d="M6 15l4-4 3 3 5-6"/>' },
+  { id: "history", label: "History", icon: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>' }
+];
+function routeFromHash() { const h = location.hash.replace("#", ""); return TABS.some(t => t.id === h) ? h : "home"; }
+function go(r, d) {
+  route = r; draft = d === undefined ? null : d; armed = null;
+  if (r !== "run") clearInterval(tick);
+  if (r === "drill-edit") ed = { tool: "move", snap: true, arrow: true, sel: null, hist: [], drag: null };
+  if (TABS.some(t => t.id === r) && location.hash !== "#" + r) { try { history.replaceState(null, "", "#" + r); } catch (e) {} }
+  render(); window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", () => { const r = routeFromHash(); if (r !== route) go(r); });
+const isEditing = () => ["plan-edit", "drill-edit", "run"].includes(route);
+function refresh() { if (!isEditing()) render(); }
+
+// ---------- Metrics ----------
+function entryStats(e) {
+  const sc = (e.scores || []).map(Number).filter(n => !isNaN(n));
+  if (!sc.length) return null;
+  const avg = sc.reduce((a, b) => a + b, 0) / sc.length, best = Math.max(...sc);
+  const pct = e.metric === "outof";
+  return { n: sc.length, avg, best, avgV: pct ? Math.round(avg / e.per * 100) : Math.round(avg * 10) / 10, bestV: pct ? Math.round(best / e.per * 100) : best };
+}
+function statText(e, s) {
+  if (!s) return "no attempts";
+  return e.metric === "outof" ? `avg ${s.avg.toFixed(1)}/${e.per} · best ${s.best}/${e.per}` : `avg ${s.avg.toFixed(1)} · best ${s.best}`;
+}
+function series(d) {
+  const pts = [];
+  logs.slice().reverse().forEach(l => (l.entries || []).forEach(e => {
+    if (e.drillId === d.id && e.metric === d.metric) { const s = entryStats(e); if (s) pts.push({ date: l.date, avg: s.avgV, best: s.bestV, n: s.n, seconds: e.seconds, e, s }); }
+  }));
+  return pts;
+}
+function streak() {
+  const days = new Set(logs.map(l => l.date)); const d = new Date(); d.setHours(0, 0, 0, 0);
+  if (!days.has(iso(d))) { d.setDate(d.getDate() - 1); if (!days.has(iso(d))) return 0; }
+  let n = 0; while (days.has(iso(d))) { n++; d.setDate(d.getDate() - 1); } return n;
+}
+const unit = d => d && d.metric === "outof" ? "%" : "";
+const METRIC_NAME = { outof: "Pots out of attempts", score: "Score (balls in a row)", break: "Break (game scoring)" };
+function metricLabel(d) {
+  const base = d.metric === "outof" ? `Pots out of ${d.per} per attempt` : d.metric === "score" ? "Score: balls potted in a row, 1 per ball" : "Break: points, game scoring";
+  return base + (d.target !== "" && d.target != null ? ` · target ${d.target}${unit(d)}` : "");
+}
+function maxFor(d) { return d.metric === "outof" ? d.per : (+d.max || 9999); }
+function validate(raw, d) {
+  const s = String(raw == null ? "" : raw).trim();
+  if (!s) return { err: "Type a score first." };
+  if (!/^\d+$/.test(s)) return { err: "Enter a whole number, like 7." };
+  const v = parseInt(s, 10), max = maxFor(d);
+  if (v > max) return { err: d.metric === "outof" ? `You can pot at most ${max} out of ${max}.` : d.metric === "break" ? `A break on this drill can't be more than ${max}.` : `That's more than ${max}. Check the number.` };
+  return { v };
+}
+
+// ---------- Table diagram rendering ----------
+let svgSeq = 0;
+function diagramSVG(dg, o = {}) {
+  const id = "ah" + (++svgSeq);
+  return `<svg class="table ${o.cls || ""}" viewBox="${-RAIL} ${-RAIL} ${TW + 2 * RAIL} ${TL + 2 * RAIL}" role="img" aria-label="${esc(o.label || "Table diagram")}">${diagramInner(dg, o, id)}</svg>`;
+}
+function trimEnd(x1, y1, x2, y2, balls) {
+  // Pull a line end back to the ball's edge when it sits on a ball centre, so arrows stay visible.
+  const onBall = balls.some(b => Math.hypot(b.x - x2, b.y - y2) < 3);
+  if (!onBall) return [x2, y2];
+  const L = Math.hypot(x2 - x1, y2 - y1); if (L < BR * 3) return [x2, y2];
+  const k = (L - BR - 8) / L; return [x1 + (x2 - x1) * k, y1 + (y2 - y1) * k];
+}
+function diagramInner(dg, o, id) {
+  dg = dg || emptyDg();
+  const sel = o.sel || null, balls = dg.balls || [];
+  let s = `<defs><marker id="${id}" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#fff"/></marker></defs>`;
+  s += `<rect x="${-RAIL}" y="${-RAIL}" width="${TW + 2 * RAIL}" height="${TL + 2 * RAIL}" rx="70" fill="#5b3a22"/>`;
+  s += `<rect x="-34" y="-34" width="${TW + 68}" height="${TL + 68}" fill="#155a32"/><rect x="0" y="0" width="${TW}" height="${TL}" fill="#1d6e3f"/>`;
+  s += `<g stroke="rgba(255,255,255,.5)" stroke-width="5" fill="none"><line x1="0" x2="${TW}" y1="${BY}" y2="${BY}"/><path d="M${CX - DR},${BY}A${DR},${DR} 0 0 0 ${CX + DR},${BY}"/></g>`;
+  s += Object.values(SPOTS).map(([x, y]) => `<circle cx="${x}" cy="${y}" r="8" fill="rgba(255,255,255,.55)"/>`).join("");
+  s += POCKETS.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="${y === TL / 2 ? 52 : 60}" fill="#0a0a0a"/>`).join("");
+  (dg.zones || []).forEach((z, i) => {
+    const on = sel && sel.k === "z" && sel.i === i;
+    s += `<circle cx="${z.x}" cy="${z.y}" r="${Math.max(z.r, 1)}" fill="rgba(255,226,122,.13)" stroke="${on ? "#ffd54a" : "#ffe27a"}" stroke-width="${on ? 10 : 6}" stroke-dasharray="22 14"/>`;
+  });
+  (dg.lines || []).forEach((l, i) => {
+    const on = sel && sel.k === "l" && sel.i === i;
+    if (l.guide) {
+      // Guide lines exist only to snap balls onto; they show in the editor and nowhere else.
+      if (!o.edit) return;
+      if (on) s += `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" stroke="#ffd54a" stroke-width="22" stroke-linecap="round" opacity=".5"/>`;
+      s += `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" stroke="#8fd8ff" stroke-width="6" stroke-linecap="round" stroke-dasharray="4 18"/>`;
+      return;
+    }
+    const [sx, sy] = trimEnd(l.x2, l.y2, l.x1, l.y1, balls), [ex, ey] = trimEnd(l.x1, l.y1, l.x2, l.y2, balls);
+    if (on) s += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="#ffd54a" stroke-width="24" stroke-linecap="round" opacity=".55"/>`;
+    s += `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" stroke="#fff" stroke-width="10" stroke-linecap="round"${l.dash ? ' stroke-dasharray="30 22"' : ""}${l.arrow ? ` marker-end="url(#${id})"` : ""}/>`;
+  });
+  const cues = balls.filter(b => b.t === "cue").length; let cn = 0;
+  balls.forEach((b, i) => {
+    const on = sel && sel.k === "b" && sel.i === i;
+    s += `<g><circle cx="${b.x}" cy="${b.y}" r="${BR}" fill="${BALL_FILL[b.t] || "#ccc"}" stroke="rgba(0,0,0,.55)" stroke-width="4"/><circle cx="${b.x - 13}" cy="${b.y - 14}" r="11" fill="#fff" opacity=".4"/>`;
+    if (b.t === "cue" && cues > 1) { cn++; s += `<text x="${b.x}" y="${b.y + 17}" text-anchor="middle" font-size="48" font-weight="700" fill="#1a1a1a" font-family="system-ui,sans-serif">${cn}</text>`; }
+    if (on) s += `<circle cx="${b.x}" cy="${b.y}" r="${BR + 18}" fill="none" stroke="#ffd54a" stroke-width="7" stroke-dasharray="14 9"/>`;
+    s += `</g>`;
+  });
+  if (sel && sel.k === "l" && dg.lines[sel.i]) { const l = dg.lines[sel.i]; s += `<circle cx="${l.x1}" cy="${l.y1}" r="20" fill="#ffd54a"/><circle cx="${l.x2}" cy="${l.y2}" r="20" fill="#ffd54a"/>`; }
+  return s;
+}
+
+// ---------- Diagram editor ----------
+const TOOLS = [["move", "Select / move"], ["ball:cue", "Cue ball"], ["ball:red", "Red"]];
+function toolsHTML() {
+  const t = ed.tool, hasSel = !!ed.sel;
+  const btn = (v, label) => `<button class="tool" data-act="dg-tool" data-v="${v}" aria-pressed="${t === v}">${label}</button>`;
+  return `<div class="tg">${TOOLS.map(([v, l]) => btn(v, l)).join("")}
+    ${COLOURS.map(c => `<button class="sw" data-act="dg-tool" data-v="ball:${c}" aria-pressed="${t === "ball:" + c}" aria-label="${c}" title="${c}"><span style="background:${BALL_FILL[c]}"></span></button>`).join("")}</div>
+  <div class="tg">${btn("line", "Solid line")}${btn("dash", "Dashed line")}${btn("guide", "Guide line (hidden)")}${btn("zone", "Target zone")}
+    <span class="tsep"></span>
+    <button class="tool" data-act="dg-spots">Colours on spots</button><button class="tool" data-act="dg-pack">Reds pack</button></div>
+  <div class="tg"><button class="tool" data-act="dg-snap" aria-pressed="${ed.snap}">Snap ${ed.snap ? "on" : "off"}</button>
+    <button class="tool" data-act="dg-arrow" aria-pressed="${ed.arrow}">Arrows ${ed.arrow ? "on" : "off"}</button>
+    <span class="tsep"></span>
+    <button class="tool" data-act="dg-undo" ${ed.hist.length ? "" : "disabled"}>Undo</button>
+    <button class="tool danger" data-act="dg-del" ${hasSel ? "" : "disabled"}>Delete selected</button>
+    <button class="tool danger${armed === "dg-clear" ? " armed" : ""}" data-act="dg-clear">${armed === "dg-clear" ? "Tap to clear all" : "Clear table"}</button></div>`;
+}
+function hintText() {
+  const t = ed.tool;
+  if (t === "move") return "Tap a ball, line or zone to select it, then drag to move it. Drag a selected line's yellow ends to reshape it.";
+  if (t.startsWith("ball:")) return t === "ball:cue" ? "Tap to place a cue ball. Add several to show shots from different angles; they get numbered." : t === "ball:red" ? "Tap to place reds." : "Tap to place the " + t.slice(5) + ". There's only one, so tapping again moves it.";
+  if (t === "guide") return "Guide line: press and drag. It shows only here in the editor (light blue dots), never on the finished diagram. With snap on, balls you place or drag near it snap onto it or its extension.";
+  if (t === "line" || t === "dash") return (t === "line" ? "Solid" : "Dashed") + " line: press and drag. With snap on, ends snap to balls, pockets and spots, and balls snap onto lines.";
+  return "Target zone: press at the centre and drag out to size it.";
+}
+function editorHTML() {
+  return `<div class="dg-editor"><div id="dg-tools" class="stack" style="gap:6px">${toolsHTML()}</div>
+    <p class="small muted" id="dg-hint">${esc(hintText())}</p>
+    <div class="tablebox" style="--h:min(78vh, 780px)"><svg id="dg-svg" class="table edit" viewBox="${-RAIL} ${-RAIL} ${TW + 2 * RAIL} ${TL + 2 * RAIL}" role="img" aria-label="Table diagram editor">${diagramInner(draft.diagram, { sel: ed.sel, edit: true }, "ahE")}</svg></div></div>`;
+}
+function redrawSVG() { const s = $("#dg-svg"); if (s) s.innerHTML = diagramInner(draft.diagram, { sel: ed.sel, edit: true }, "ahE"); }
+function redrawTools() { const t = $("#dg-tools"); if (t) t.innerHTML = toolsHTML(); const h = $("#dg-hint"); if (h) h.textContent = hintText(); }
+function pushHist() { ed.hist.push(clone(draft.diagram)); if (ed.hist.length > 60) ed.hist.shift(); }
+function svgPt(svg, ev) { const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const p = pt.matrixTransform(svg.getScreenCTM().inverse()); return { x: p.x, y: p.y }; }
+const clampBall = q => ({ x: Math.round(Math.min(TW - BR, Math.max(BR, q.x))), y: Math.round(Math.min(TL - BR, Math.max(BR, q.y))) });
+const clampTable = q => ({ x: Math.round(Math.min(TW, Math.max(0, q.x))), y: Math.round(Math.min(TL, Math.max(0, q.y))) });
+function snapPt(p, o = {}) {
+  if (!ed.snap) return p;
+  const dg = draft.diagram, cands = Object.values(SPOTS).slice();
+  if (!o.ball) { cands.push(...POCKETS); dg.balls.forEach(b => cands.push([b.x, b.y])); }
+  let best = null, bd = 80;
+  cands.forEach(([x, y]) => { const d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = { x, y }; } });
+  if (best) return best;
+  // Snap onto drawn lines, including their extension (e.g. put a cue ball on the line of a pot).
+  bd = COARSE ? 90 : 60;
+  dg.lines.forEach((l, i) => {
+    if (i === o.exLine) return;
+    const dx = l.x2 - l.x1, dy = l.y2 - l.y1, L2 = dx * dx + dy * dy; if (L2 < 1) return;
+    const t = ((p.x - l.x1) * dx + (p.y - l.y1) * dy) / L2; if (t < -2 || t > 3) return;
+    const q = { x: l.x1 + t * dx, y: l.y1 + t * dy }, d = Math.hypot(p.x - q.x, p.y - q.y);
+    if (d < bd) { bd = d; best = q; }
+  });
+  if (best) return best;
+  let x = p.x, y = p.y;
+  [CX, CX - DR, CX + DR].forEach(v => { if (Math.abs(p.x - v) < 40) x = v; });
+  [BY, TL / 2, TL / 4, 324].forEach(v => { if (Math.abs(p.y - v) < 40) y = v; });
+  return { x, y };
+}
+function segDist(p, l) {
+  const dx = l.x2 - l.x1, dy = l.y2 - l.y1, L2 = dx * dx + dy * dy;
+  const t = L2 ? Math.max(0, Math.min(1, ((p.x - l.x1) * dx + (p.y - l.y1) * dy) / L2)) : 0;
+  return Math.hypot(p.x - (l.x1 + t * dx), p.y - (l.y1 + t * dy));
+}
+function hitTest(p) {
+  const dg = draft.diagram, tol = COARSE ? 90 : 50;
+  if (ed.sel && ed.sel.k === "l" && dg.lines[ed.sel.i]) { const i = ed.sel.i, l = dg.lines[i];
+    if (Math.hypot(p.x - l.x1, p.y - l.y1) < tol) return { k: "l", i, part: "p1" };
+    if (Math.hypot(p.x - l.x2, p.y - l.y2) < tol) return { k: "l", i, part: "p2" }; }
+  for (let i = dg.balls.length - 1; i >= 0; i--) { const b = dg.balls[i]; if (Math.hypot(p.x - b.x, p.y - b.y) < BR + tol * 0.6) return { k: "b", i }; }
+  for (let i = dg.lines.length - 1; i >= 0; i--) { if (segDist(p, dg.lines[i]) < tol * 0.7) return { k: "l", i, part: "body" }; }
+  for (let i = dg.zones.length - 1; i >= 0; i--) { const z = dg.zones[i], d = Math.hypot(p.x - z.x, p.y - z.y);
+    if (Math.abs(d - z.r) < tol * 0.6) return { k: "z", i, part: "r" }; if (d < z.r) return { k: "z", i, part: "body" }; }
+  return null;
+}
+function edDown(ev) {
+  const svg = ev.target.closest && ev.target.closest("#dg-svg"); if (!svg || !ed || route !== "drill-edit") return;
+  ev.preventDefault(); try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
+  const p = svgPt(svg, ev), dg = draft.diagram, t = ed.tool;
+  if (t === "move") {
+    const h = hitTest(p); ed.sel = h ? { k: h.k, i: h.i } : null;
+    if (h) { const item = h.k === "b" ? dg.balls[h.i] : h.k === "l" ? dg.lines[h.i] : dg.zones[h.i]; ed.drag = Object.assign({}, h, { start: p, orig: clone(item), pushed: false }); }
+    redrawSVG(); redrawTools(); return;
+  }
+  pushHist();
+  if (t.startsWith("ball:")) {
+    const type = t.slice(5), q = clampBall(snapPt(p, { ball: true }));
+    let i = type !== "cue" && type !== "red" ? dg.balls.findIndex(x => x.t === type) : -1;
+    if (i >= 0) { dg.balls[i].x = q.x; dg.balls[i].y = q.y; } else { dg.balls.push({ t: type, x: q.x, y: q.y }); i = dg.balls.length - 1; }
+    ed.sel = { k: "b", i }; ed.drag = { k: "b", i, pushed: true };
+  } else if (t === "line" || t === "dash" || t === "guide") {
+    const q = clampTable(snapPt(p));
+    dg.lines.push(t === "guide" ? { x1: q.x, y1: q.y, x2: q.x, y2: q.y, guide: true } : { x1: q.x, y1: q.y, x2: q.x, y2: q.y, dash: t === "dash", arrow: ed.arrow });
+    const i = dg.lines.length - 1; ed.sel = { k: "l", i }; ed.drag = { k: "l", i, part: "p2", fresh: true, pushed: true };
+  } else if (t === "zone") {
+    const q = clampTable(p); dg.zones.push({ x: q.x, y: q.y, r: 0 });
+    const i = dg.zones.length - 1; ed.sel = { k: "z", i }; ed.drag = { k: "z", i, part: "r", fresh: true, pushed: true };
+  }
+  redrawSVG(); redrawTools();
+}
+function edMove(ev) {
+  if (!ed || !ed.drag || route !== "drill-edit") return;
+  const svg = $("#dg-svg"); if (!svg) return; ev.preventDefault();
+  const p = svgPt(svg, ev), d = ed.drag, dg = draft.diagram;
+  if (!d.pushed) { pushHist(); d.pushed = true; }
+  if (d.k === "b") { const q = clampBall(snapPt(p, { ball: true })); dg.balls[d.i].x = q.x; dg.balls[d.i].y = q.y; }
+  else if (d.k === "l") {
+    const l = dg.lines[d.i];
+    if (d.part === "p1" || d.part === "p2") { const q = clampTable(snapPt(p, { exLine: d.i })); if (d.part === "p1") { l.x1 = q.x; l.y1 = q.y; } else { l.x2 = q.x; l.y2 = q.y; } }
+    else { const dx = p.x - d.start.x, dy = p.y - d.start.y; l.x1 = Math.round(d.orig.x1 + dx); l.y1 = Math.round(d.orig.y1 + dy); l.x2 = Math.round(d.orig.x2 + dx); l.y2 = Math.round(d.orig.y2 + dy); }
+  } else if (d.k === "z") {
+    const z = dg.zones[d.i];
+    if (d.part === "r") z.r = Math.round(Math.max(30, Math.hypot(p.x - z.x, p.y - z.y)));
+    else { const q = clampTable({ x: d.orig.x + p.x - d.start.x, y: d.orig.y + p.y - d.start.y }); z.x = q.x; z.y = q.y; }
+  }
+  redrawSVG();
+}
+function edUp() {
+  if (!ed || !ed.drag) return;
+  const d = ed.drag, dg = draft.diagram; ed.drag = null;
+  if (d.fresh && d.k === "l") { const l = dg.lines[d.i]; if (Math.hypot(l.x2 - l.x1, l.y2 - l.y1) < 40) { dg.lines.splice(d.i, 1); ed.hist.pop(); ed.sel = null; } }
+  if (d.fresh && d.k === "z") { const z = dg.zones[d.i]; if (z.r < 40) z.r = 150; }
+  redrawSVG(); redrawTools();
+}
+function edDelete() {
+  if (!ed.sel) return; pushHist();
+  const key = { b: "balls", l: "lines", z: "zones" }[ed.sel.k];
+  draft.diagram[key].splice(ed.sel.i, 1); ed.sel = null; redrawSVG(); redrawTools();
+}
+document.addEventListener("pointerdown", edDown);
+document.addEventListener("pointermove", edMove, { passive: false });
+document.addEventListener("pointerup", edUp);
+document.addEventListener("pointercancel", edUp);
+
+// ---------- Charts ----------
+function niceMax(v) {
+  if (v <= 10) return 10;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 4 ? 4 : m <= 5 ? 5 : m <= 8 ? 8 : 10) * p;
+}
+function lineChart(pts, drill) {
+  const W = 640, H = 260, L = 54, R = 18, T = 24, B = 34, iw = W - L - R, ih = H - T - B;
+  const pct = drill.metric === "outof", u = pct ? "%" : "";
+  const max = pct ? 100 : niceMax(Math.max(+drill.target || 0, ...pts.map(p => p.best)));
+  const n = pts.length, x = i => L + (n === 1 ? iw / 2 : i * iw / (n - 1)), y = v => T + ih - Math.min(v, max) / max * ih;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(drill.name)}: average and best per session">`;
+  for (let i = 0; i <= 4; i++) { const v = max * i / 4, yy = y(v); s += `<line class="grid" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text x="${L - 8}" y="${yy + 5}" text-anchor="end">${Math.round(v)}${u}</text>`; }
+  if (drill.target !== "" && drill.target != null) { const ty = y(+drill.target); s += `<line class="target" x1="${L}" x2="${W - R}" y1="${ty}" y2="${ty}"/>`; }
+  const path = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.avg).toFixed(1)}`).join("");
+  if (n > 1) s += `<path class="area" d="${path}L${x(n - 1).toFixed(1)},${T + ih}L${x(0).toFixed(1)},${T + ih}Z"/><path class="line" d="${path}"/>`;
+  pts.forEach((p, i) => {
+    s += `<circle class="bestdot" cx="${x(i).toFixed(1)}" cy="${y(p.best).toFixed(1)}" r="4.5"><title>${esc(fmtDate(p.date))} best: ${p.best}${u}</title></circle>`;
+    s += `<circle class="dot${i === n - 1 ? " last" : ""}" cx="${x(i).toFixed(1)}" cy="${y(p.avg).toFixed(1)}" r="${i === n - 1 ? 5.5 : 4}"><title>${esc(fmtDate(p.date))} average: ${p.avg}${u}</title></circle>`;
+  });
+  const last = pts[n - 1];
+  s += `<text class="strong" x="${Math.min(x(n - 1), W - R - 4)}" y="${Math.min(y(last.avg) + 24, T + ih - 4)}" text-anchor="${n === 1 ? "middle" : "end"}">${last.avg}${u}</text>`;
+  const labs = n === 1 ? [0] : n < 5 ? pts.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1];
+  labs.forEach(i => { s += `<text x="${x(i)}" y="${H - 8}" text-anchor="${n === 1 ? "middle" : i === 0 ? "start" : i === n - 1 ? "end" : "middle"}">${esc(fmtShort(pts[i].date))}</text>`; });
+  return s + "</svg>";
+}
+function weeklyChart() {
+  const weeks = []; const ws = weekStart(new Date());
+  for (let i = 7; i >= 0; i--) { const d = new Date(ws); d.setDate(d.getDate() - 7 * i); weeks.push({ key: iso(d), min: 0 }); }
+  logs.forEach(l => { const k = iso(weekStart(parseISO(l.date))); const w = weeks.find(w => w.key === k); if (w) w.min += +l.minutes || 0; });
+  const W = 640, H = 200, L = 8, R = 8, T = 26, B = 30, iw = W - L - R, ih = H - T - B;
+  const max = niceMax(Math.max(60, ...weeks.map(w => w.min))), bw = iw / weeks.length;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Minutes practised per week, last 8 weeks"><line class="grid" x1="${L}" x2="${W - R}" y1="${T + ih}" y2="${T + ih}"/>`;
+  weeks.forEach((w, i) => {
+    const h = w.min / max * ih, xx = L + i * bw + bw * 0.18, ww = bw * 0.64, now = i === weeks.length - 1;
+    if (w.min > 0) s += `<rect class="bar${now ? " now" : ""}" x="${xx.toFixed(1)}" y="${(T + ih - h).toFixed(1)}" width="${ww.toFixed(1)}" height="${h.toFixed(1)}" rx="3"/><text class="strong" x="${(xx + ww / 2).toFixed(1)}" y="${(T + ih - h - 6).toFixed(1)}" text-anchor="middle">${w.min}</text>`;
+    s += `<text x="${(xx + ww / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${now ? "Now" : esc(fmtShort(w.key))}</text>`;
+  });
+  return s + "</svg>";
+}
+
+// ---------- Views ----------
+const planMinutes = p => p.items.reduce((a, it) => a + (+it.minutes || 0), 0);
+function planCard(p, home) {
+  const rows = p.items.map((it, i) => { const d = drillById(it.drillId); return d ? `<li class="drillline">${home ? "" : `<span class="num muted">${i + 1}</span>`}${ball(d.cat)}<span class="grow">${esc(d.name)}</span><span class="num muted">${it.minutes} min</span></li>` : ""; }).join("");
+  return `<article class="card">
+    <div class="row between"><div class="grow"><h3>${esc(p.name)}</h3><p class="muted small">${p.items.length} drills · ${planMinutes(p)} min</p></div>
+    <div class="row"><button class="${home ? "ghost" : ""}" data-act="edit-plan" data-id="${esc(p.id)}">Edit</button><button class="primary" data-act="start" data-id="${esc(p.id)}">Start</button></div></div>
+    <ul class="plain small">${rows}</ul></article>`;
+}
+function viewHome() {
+  const ws = weekStart(new Date()), weekLogs = logs.filter(l => parseISO(l.date) >= ws);
+  const mins = weekLogs.reduce((a, l) => a + (+l.minutes || 0), 0);
+  const pending = LS.get("snk.run");
+  return `
+  <section class="stack"><p class="eyebrow">${esc(new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }))}</p><h1>Ready for the table?</h1></section>
+  ${pending ? `<article class="card" style="border-color:var(--accent)"><div class="row between"><div class="grow"><h3>Session in progress</h3><p class="small muted">${esc(pending.planName || "Free practice")} · drill ${Math.min(pending.idx + 1, pending.items.length || 1)} of ${pending.items.length || 1}</p></div>
+    <div class="row"><button class="danger ghost${armed === "run-discard" ? " armed" : ""}" data-act="run-discard-home">${armed === "run-discard" ? "Tap to discard" : "Discard"}</button><button class="primary" data-act="run-resume">Resume</button></div></div></article>` : ""}
+  <div class="stats">
+    <div class="stat"><b>${weekLogs.length}</b><span>Sessions this week</span></div>
+    <div class="stat"><b>${mins}</b><span>Minutes this week</span></div>
+    <div class="stat"><b>${streak()}</b><span>Day streak</span></div>
+    <div class="stat"><b>${logs.length}</b><span>Sessions logged</span></div>
+  </div>
+  <section class="stack">
+    <div class="row between"><h2>Start a session</h2><button class="ghost" data-act="quick-log">+ Free practice</button></div>
+    ${lib.plans.map(p => planCard(p, true)).join("") || `<div class="empty"><p>No session plans yet.</p><button class="primary" data-act="new-plan">Create a session</button></div>`}
+  </section>
+  <section class="stack">
+    <div class="row between"><h2>Recent</h2>${logs.length > 3 ? `<button class="ghost" data-act="tab" data-id="history">See all</button>` : ""}</div>
+    ${logs.slice(0, 3).map(l => logCard(l)).join("") || `<div class="empty"><p>Sessions you complete appear here. Tap <b>Start</b> on a plan above to begin your first one.</p></div>`}
+  </section>`;
+}
+function logCard(l, withDelete) {
+  const summary = (l.entries || []).map(e => { const s = entryStats(e); return `<li class="drillline">${ball(e.cat)}<span class="grow">${esc(e.drillName)}</span><span class="num muted">${s ? s.n + "×" : ""}</span><span class="num">${esc(statText(e, s))}</span></li>`; }).join("");
+  return `<article class="card">
+    <div class="row between"><div class="grow"><h3>${esc(l.planName || "Free practice")}</h3><p class="muted small">${esc(fmtDate(l.date))}${l.minutes ? " · " + l.minutes + " min" : ""}</p></div>
+    ${withDelete ? `<button class="danger ghost${armed === "log:" + l.id ? " armed" : ""}" data-act="del-log" data-id="${esc(l.id)}">${armed === "log:" + l.id ? "Tap to confirm" : "Delete"}</button>` : ""}</div>
+    ${summary ? `<ul class="plain small">${summary}</ul>` : ""}
+    ${l.notes ? `<p class="small muted">${esc(l.notes)}</p>` : ""}
+  </article>`;
+}
+function viewPlans() {
+  return `<section class="row between"><h1>Sessions</h1><button class="primary" data-act="new-plan">+ New session</button></section>
+  <p class="muted">A session is a routine you repeat: the drills you play, in order, and how long you spend on each.</p>
+  <div class="list">${lib.plans.map(p => planCard(p, false)).join("") || `<div class="empty"><p>No sessions yet.</p></div>`}</div>`;
+}
+function viewPlanEdit() {
+  const p = draft, isNew = !lib.plans.some(x => x.id === p.id);
+  const opts = sel => lib.drills.map(d => `<option value="${esc(d.id)}"${d.id === sel ? " selected" : ""}>${esc(d.name)}</option>`).join("");
+  return `<section class="row between"><h1>${isNew ? "New session" : "Edit session"}</h1><button class="ghost" data-act="cancel">Cancel</button></section>
+  <label class="field">Name<input id="plan-name" data-bind="name" value="${esc(p.name)}" placeholder="e.g. Sunday long game"></label>
+  <section class="stack"><div class="row between"><h2>Drills, in order</h2><span class="muted small" id="plan-total">${planMinutes(p)} min in total</span></div>
+  ${p.items.map((it, i) => `<div class="entry">
+    <div class="row"><span class="num muted">${i + 1}</span><label class="field grow">Drill<select id="pi-d-${i}" data-bind="items.${i}.drillId" data-rerender="1">${opts(it.drillId)}</select></label>
+    <label class="field" style="width:96px">Minutes<input id="pi-m-${i}" type="number" inputmode="numeric" min="1" data-bind="items.${i}.minutes" data-total="1" value="${esc(it.minutes)}"></label></div>
+    <div class="row"><button class="ghost" data-act="mv" data-i="${i}" data-d="-1" ${i === 0 ? "disabled" : ""}>↑ Up</button><button class="ghost" data-act="mv" data-i="${i}" data-d="1" ${i === p.items.length - 1 ? "disabled" : ""}>↓ Down</button><span class="grow"></span><button class="ghost danger" data-act="rm-item" data-i="${i}">Remove</button></div>
+  </div>`).join("") || `<div class="empty"><p>Add the drills you want to play in this session.</p></div>`}
+  <button data-act="add-item">+ Add drill</button></section>
+  <div class="row"><button class="primary" data-act="save-plan">Save session</button>${isNew ? "" : `<button class="danger${armed === "plan" ? " armed" : ""}" data-act="del-plan">${armed === "plan" ? "Tap to confirm delete" : "Delete session"}</button>`}</div>`;
+}
+function viewDrills() {
+  const groups = CATS.map(c => {
+    const ds = lib.drills.filter(d => d.cat === c); if (!ds.length) return "";
+    return `<section class="stack"><h2 class="row">${ball(c)} ${esc(c)}</h2><div class="list">${ds.map(d => {
+      const pts = series(d), best = pts.length ? Math.max(...pts.map(p => p.best)) : null;
+      return `<article class="card link" data-act="view-drill" data-id="${esc(d.id)}" tabindex="0"><div class="row" style="align-items:flex-start;flex-wrap:nowrap">
+        <div class="thumb">${diagramSVG(d.diagram, { label: d.name + " setup" })}</div>
+        <div class="grow stack" style="gap:4px"><div class="row between"><h3>${esc(d.name)}</h3>${best != null ? `<span class="pill mute">Best <span class="num">${best}${unit(d)}</span></span>` : ""}</div>
+        <p class="muted small">${esc(metricLabel(d))} · ${d.minutes} min</p>
+        ${d.how ? `<p class="small">${esc(d.how)}</p>` : ""}</div></div></article>`;
+    }).join("")}</div></section>`;
+  }).join("");
+  return `<section class="row between"><h1>Drills</h1><button class="primary" data-act="new-drill">+ New drill</button></section>${groups}`;
+}
+function drillInfo(d) {
+  return `<div class="stack"><p class="eyebrow row">${ball(d.cat)} ${esc(d.cat)}</p>
+    <p><b>${esc(METRIC_NAME[d.metric])}</b><br><span class="muted small">${esc(metricLabel(d))}</span></p>
+    ${d.how ? `<p>${esc(d.how)}</p>` : `<p class="muted">No setup notes.</p>`}</div>`;
+}
+function viewDrill() {
+  const d = drillById(draft.id); if (!d) return `<div class="empty"><p>This drill was deleted.</p></div>`;
+  const pts = series(d), best = pts.length ? Math.max(...pts.map(p => p.best)) : null;
+  return `<section class="row between"><button class="ghost" data-act="tab" data-id="drills">← Drills</button><button data-act="edit-drill" data-id="${esc(d.id)}">Edit drill</button></section>
+  <h1>${esc(d.name)}</h1>
+  <div class="setupgrid"><div class="tablebox" style="--h:min(70vh, 700px)">${diagramSVG(d.diagram, { label: d.name + " setup" })}</div>
+  <div class="stack">${drillInfo(d)}
+    ${best != null ? `<div class="stats" style="grid-template-columns:repeat(2,1fr)"><div class="stat"><b>${best}${unit(d)}</b><span>Best attempt</span></div><div class="stat"><b>${pts.length}</b><span>Sessions</span></div></div>` : ""}
+    <div class="row"><button class="primary" data-act="practise" data-id="${esc(d.id)}">Practise this drill · ${d.minutes} min</button>${pts.length ? `<button data-act="see-progress" data-id="${esc(d.id)}">See progress</button>` : ""}</div></div></div>`;
+}
+function viewDrillEdit() {
+  const d = draft, isNew = !lib.drills.some(x => x.id === d.id);
+  return `<section class="row between"><h1>${isNew ? "New drill" : "Edit drill"}</h1><button class="ghost" data-act="cancel">Cancel</button></section>
+  <div class="fields">
+    <label class="field" style="grid-column:1/-1">Name<input id="dr-name" data-bind="name" value="${esc(d.name)}" placeholder="e.g. Pink into the middle"></label>
+    <label class="field">Type<select id="dr-cat" data-bind="cat">${CATS.map(c => `<option${c === d.cat ? " selected" : ""}>${c}</option>`).join("")}</select></label>
+    <label class="field">Default minutes<input id="dr-min" type="number" inputmode="numeric" min="1" data-bind="minutes" value="${esc(d.minutes)}"></label>
+  </div>
+  <div class="stack"><span class="eyebrow">How you score each attempt</span>
+    <div class="seg" role="group" aria-label="Scoring">${["outof", "score", "break"].map(m => `<button data-act="metric" data-v="${m}" aria-pressed="${d.metric === m}">${METRIC_NAME[m]}</button>`).join("")}</div>
+    <p class="small muted">${d.metric === "outof" ? "Each attempt is a set of shots; enter how many you potted." : d.metric === "score" ? "Each attempt scores 1 per ball potted in a row, whatever the colour." : "Each attempt is a break scored like a frame: red 1, yellow 2, green 3, brown 4, blue 5, pink 6, black 7."}</p>
+  </div>
+  <div class="fields">
+    ${d.metric === "outof" ? `<label class="field">Shots per attempt<input id="dr-per" type="number" inputmode="numeric" min="1" data-bind="per" value="${esc(d.per)}"></label>` : `<label class="field">Highest possible (optional)<input id="dr-max" type="number" inputmode="numeric" min="1" data-bind="max" value="${esc(d.max)}" placeholder="no limit"></label>`}
+    <label class="field">Target ${d.metric === "outof" ? "(% potted)" : d.metric === "score" ? "(balls in a row)" : "(points)"}<input id="dr-tgt" type="number" inputmode="numeric" min="0" data-bind="target" value="${esc(d.target)}"></label>
+  </div>
+  <section class="stack"><h2>Table setup</h2>${editorHTML()}</section>
+  <label class="field">Setup notes<textarea id="dr-how" data-bind="how" placeholder="Anything the diagram doesn't show: what counts as a success, how to reset…">${esc(d.how)}</textarea></label>
+  <div class="row"><button class="primary" data-act="save-drill">Save drill</button>${isNew ? "" : `<button class="danger${armed === "drill" ? " armed" : ""}" data-act="del-drill">${armed === "drill" ? "Tap to confirm delete" : "Delete drill"}</button>`}</div>
+  ${isNew ? "" : `<p class="small muted">Deleting a drill removes it from your sessions. Results you've already logged stay in your history.</p>`}`;
+}
+
+// ---------- Session runner ----------
+let tick = null, actx = null, wakeLock = null;
+const runElapsed = r => r.elapsed + (r.phase === "running" && !r.paused && r.started ? (Date.now() - r.started) / 1000 : 0);
+function persistRun() { if (route === "run" && draft) LS.set("snk.run", draft); }
+function unlockAudio() { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === "suspended") actx.resume(); } catch (e) {} }
+function beep() {
+  try { if (navigator.vibrate) navigator.vibrate([300, 150, 300]); } catch (e) {}
+  if (!actx) return;
+  try { [0, 0.35, 0.7].forEach(t => { const o = actx.createOscillator(), g = actx.createGain(), at = actx.currentTime + t; o.frequency.value = 880; g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.3, at + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.25); o.connect(g); g.connect(actx.destination); o.start(at); o.stop(at + 0.3); }); } catch (e) {}
+}
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && navigator.wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); }
+    else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) {}
+}
+function updateTimer() {
+  const r = draft; if (route !== "run" || !r || r.phase !== "running") return;
+  const it = r.items[r.idx], total = (+it.minutes || 0) * 60, el = runElapsed(r), rem = total - el;
+  const t = $("#timer"); if (!t) return;
+  t.textContent = rem >= 0 ? mmss(Math.ceil(rem)) : "+" + mmss(-rem);
+  t.classList.toggle("over", rem < 0); t.classList.toggle("paused", !!r.paused);
+  const bar = $("#tbar"); if (bar) bar.style.width = (total ? Math.min(100, el / total * 100) : 0) + "%";
+  if (rem <= 0 && !r.beeped && total > 0) { r.beeped = true; beep(); persistRun(); toast("Time's up for this drill"); }
+}
+function startTick() { clearInterval(tick); tick = setInterval(updateTimer, 250); }
+function newRun(planId, planName, items) {
+  return { id: newId("l"), planId, planName, date: todayISO(), items, idx: 0, phase: items.length ? "setup" : "summary", entries: [], cur: -1,
+    started: null, elapsed: 0, paused: false, beeped: false, input: "", pane: "pad", notes: "", minutes: null, created: new Date().toISOString() };
+}
+const curDrill = r => { const it = r.items[r.idx]; return it ? drillById(it.drillId) : null; };
+const curEntry = r => r.entries[r.cur];
+const scoringOf = r => Object.assign({}, curDrill(r) || curEntry(r), { per: curEntry(r).per, metric: curEntry(r).metric });
+
+function scoresHTML() {
+  const r = draft, e = curEntry(r), s = entryStats(e);
+  const chips = e.scores.map(v => `<span class="att${s && v === s.best ? " top" : ""}">${v}</span>`).join("");
+  const kind = e.metric === "outof" ? ` (out of ${e.per})` : e.metric === "break" ? " (break)" : " (balls in a row)";
+  const input = COARSE
+    ? `<div class="display" aria-live="polite">${r.input ? `<span id="padval">${esc(r.input)}</span>${e.metric === "outof" ? `<span class="of"> / ${e.per}</span>` : ""}` : `<span class="of">Attempt ${e.scores.length + 1}${kind}</span>`}</div>
+       <p class="err" id="paderr" role="alert"></p>
+       <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => `<button data-act="pad" data-k="${k}">${k}</button>`).join("")}
+         <button data-act="pad" data-k="back" aria-label="Delete digit">⌫</button><button data-act="pad" data-k="0">0</button><button class="ok" data-act="pad" data-k="ok">Add</button></div>`
+    : `<div class="row" style="align-items:flex-end"><label class="field grow">Score for attempt ${e.scores.length + 1}${kind}
+         <input id="score-in" inputmode="numeric" autocomplete="off" value="${esc(r.input || "")}" placeholder="Type a number and press Enter"></label><button class="primary" data-act="add-score">Add</button></div>
+       <p class="err" id="paderr" role="alert" style="text-align:left"></p>`;
+  return `<div class="row between"><span class="eyebrow">Attempts</span>${e.scores.length ? `<button class="ghost" data-act="undo-score">Undo last</button>` : ""}</div>
+    <div class="attempts">${chips || `<span class="muted small">No attempts yet. Enter your score after each one.</span>`}</div>
+    <div class="stats" style="grid-template-columns:repeat(3,1fr)">
+      <div class="stat"><b>${s ? s.n : 0}</b><span>Attempts</span></div>
+      <div class="stat"><b>${s ? (e.metric === "outof" ? s.avgV + "%" : s.avg.toFixed(1)) : "–"}</b><span>Average</span></div>
+      <div class="stat"><b>${s ? s.best : "–"}</b><span>Best</span></div>
+    </div>${input}`;
+}
+function renderScores() { const p = $("#scorepane"); if (p) p.innerHTML = scoresHTML(); const i = $("#score-in"); if (i) i.focus(); }
+function addScore(raw) {
+  const r = draft, res = validate(raw, scoringOf(r));
+  if (res.err) { const er = $("#paderr"); if (er) er.textContent = res.err; return; }
+  curEntry(r).scores.push(res.v); r.input = ""; persistRun(); renderScores();
+}
+function viewRun() {
+  const r = draft;
+  if (r.phase === "summary") return viewSummary();
+  const d = curDrill(r), it = r.items[r.idx];
+  if (!d) { r.idx++; r.phase = r.idx < r.items.length ? "setup" : "summary"; return viewRun(); }
+  const head = `<div class="runhead"><div class="stack" style="gap:2px"><p class="eyebrow">${esc(r.planName || "Free practice")} · drill ${r.idx + 1} of ${r.items.length}</p><h1>${esc(d.name)}</h1></div>
+    <button class="ghost" data-act="run-leave">Leave</button></div>`;
+  if (r.phase === "setup") {
+    return head + `<div class="setupgrid"><div class="tablebox" style="--h:min(52vh, 620px)">${diagramSVG(d.diagram, { label: d.name + " setup" })}</div>
+    <div class="stack"><p class="eyebrow">Set up the table, then press start</p>${drillInfo(d)}
+      <label class="field" style="max-width:180px">Time for this drill (min)<input id="run-min" type="number" inputmode="numeric" min="1" data-bind="items.${r.idx}.minutes" value="${esc(it.minutes)}"></label>
+      <button class="primary big" data-act="run-start">Start drill</button>
+      <div class="row"><button class="ghost" data-act="run-skip">Skip this drill</button><button class="ghost" data-act="run-end">Finish session</button></div></div></div>`;
+  }
+  const last = r.idx === r.items.length - 1, next = r.items[r.idx + 1] && drillById(r.items[r.idx + 1].drillId);
+  return head + `<div class="timerbox"><div class="row between"><span id="timer" class="timer">0:00</span>
+      <div class="row"><button id="pausebtn" data-act="run-pause">${r.paused ? "Resume" : "Pause"}</button><button class="primary" data-act="run-stop">${last ? "Finish session" : "Next drill"}</button></div></div>
+      <div class="track"><span id="tbar"></span></div><div class="row between"><p class="small muted">${it.minutes} min allotted${next ? " · next: " + esc(next.name) : ""}</p>${last ? "" : `<button class="ghost" data-act="run-finish">End session now</button>`}</div></div>
+    <div class="seg panetoggle" role="group" aria-label="View"><button data-act="pane" data-v="pad" aria-pressed="${r.pane !== "ov"}">Enter scores</button><button data-act="pane" data-v="ov" aria-pressed="${r.pane === "ov"}">Drill overview</button></div>
+    <div class="runcols" data-pane="${r.pane === "ov" ? "ov" : "pad"}">
+      <div class="pane-ov stack"><div class="tablebox" style="--h:min(56vh, 560px)">${diagramSVG(d.diagram, { label: d.name + " setup" })}</div>${drillInfo(d)}</div>
+      <div class="pane-sc stack" id="scorepane">${scoresHTML()}</div>
+    </div>`;
+}
+function viewSummary() {
+  const r = draft, total = Math.round(r.entries.reduce((a, e) => a + e.seconds, 0) / 60);
+  const used = new Set(r.items.map(i => i.drillId));
+  const opts = lib.drills.map(d => `<option value="${esc(d.id)}">${esc(d.name)}${used.has(d.id) ? " (again)" : ""}</option>`).join("");
+  const rows = r.entries.map(e => { const s = entryStats(e); return `<li class="drillline">${ball(e.cat)}<span class="grow">${esc(e.drillName)}</span><span class="num muted">${mmss(e.seconds)}</span><span class="num">${s ? s.n + "× · " : ""}${esc(statText(e, s))}</span></li>`; }).join("");
+  return `<div class="runhead"><div class="stack" style="gap:2px"><p class="eyebrow">${r.entries.length ? "Session complete" : "Free practice"}</p><h1>${esc(r.planName || "Free practice")}</h1></div><button class="ghost" data-act="run-leave">Leave</button></div>
+  ${r.entries.length ? `<article class="card"><ul class="plain small">${rows}</ul></article>` : `<p class="muted">Pick a drill to start. Each drill is timed and you enter a score after every attempt.</p>`}
+  <div class="row"><select id="run-add" class="grow" style="flex:1" aria-label="Drill to add">${opts}</select><button data-act="run-add">${r.entries.length ? "Add another drill" : "Start drill"}</button></div>
+  ${r.entries.length ? `<div class="fields">
+    <label class="field">Date<input id="sm-date" type="date" data-bind="date" value="${esc(r.date)}"></label>
+    <label class="field">Minutes practised<input id="sm-min" type="number" inputmode="numeric" min="0" data-bind="minutes" value="${esc(r.minutes == null ? total : r.minutes)}"></label></div>
+  <label class="field">Notes<textarea id="sm-notes" data-bind="notes" placeholder="What felt good, what to work on next time">${esc(r.notes)}</textarea></label>
+  <div class="row"><button class="primary big" data-act="run-save">Save session</button><button class="danger ghost${armed === "run-discard" ? " armed" : ""}" data-act="run-discard">${armed === "run-discard" ? "Tap to discard" : "Discard"}</button></div>` : ""}`;
+}
+function stopCurrent(r) {
+  const e = curEntry(r); if (r.phase === "running" && e) e.seconds += Math.round(runElapsed(r));
+  r.started = null; r.elapsed = 0; r.paused = false; r.beeped = false; r.input = ""; keepAwake(false);
+}
+function advance(r) { r.idx++; r.phase = r.idx < r.items.length ? "setup" : "summary"; clearInterval(tick); persistRun(); render(); window.scrollTo(0, 0); }
+
+// ---------- Progress & history ----------
+function viewProgress() {
+  const withData = lib.drills.filter(d => series(d).length);
+  if (!progressDrill || !withData.some(d => d.id === progressDrill)) progressDrill = withData[0] ? withData[0].id : null;
+  const top = `<section class="stack"><h1>Progress</h1></section>
+  <section class="card"><div class="row between"><h2>Time on the table</h2><span class="muted small">minutes per week</span></div>${weeklyChart()}</section>`;
+  if (!withData.length) return top + `<div class="empty"><p>Complete a few sessions and each drill will chart here: your average and best per session, against your target.</p><button class="primary" data-act="tab" data-id="home">Start a session</button></div>`;
+  const d = drillById(progressDrill), pts = series(d), u = unit(d);
+  const bestEver = Math.max(...pts.map(p => p.best)), last5 = pts.slice(-5), avg5 = Math.round(last5.reduce((a, p) => a + p.avg, 0) / last5.length * 10) / 10;
+  const prev5 = pts.slice(-10, -5), avgPrev = prev5.length ? Math.round(prev5.reduce((a, p) => a + p.avg, 0) / prev5.length * 10) / 10 : null;
+  const diff = avgPrev == null ? 0 : Math.round((avg5 - avgPrev) * 10) / 10;
+  const trend = avgPrev == null ? "" : diff > 0 ? `<span class="pill good">Up ${diff}${u} on the previous ${prev5.length}</span>` : diff < 0 ? `<span class="pill warn">Down ${-diff}${u} on the previous ${prev5.length}</span>` : `<span class="pill mute">Level with the previous ${prev5.length}</span>`;
+  const hasT = d.target !== "" && d.target != null;
+  return top + `<section class="stack"><h2>By drill</h2>
+    <div class="chips" role="group" aria-label="Drill">${withData.map(x => `<button class="chip" data-act="pick-drill" data-id="${esc(x.id)}" aria-pressed="${x.id === d.id}">${ball(x.cat)}${esc(x.name)}</button>`).join("")}</div>
+    <article class="card">
+      <div class="row between"><div class="grow"><h3>${esc(d.name)}</h3><p class="muted small">${esc(metricLabel(d))}</p></div>${trend}</div>
+      <div class="stats">
+        <div class="stat"><b>${pts[pts.length - 1].avg}${u}</b><span>Latest average</span></div>
+        <div class="stat"><b>${avg5}${u}</b><span>Avg, last ${last5.length} sessions</span></div>
+        <div class="stat"><b>${bestEver}${u}</b><span>Best attempt</span></div>
+        <div class="stat"><b>${pts.reduce((a, p) => a + p.n, 0)}</b><span>Attempts logged</span></div>
+      </div>
+      <div class="legend"><span><i></i>Session average</span><span><i class="b"></i>Best attempt</span>${hasT ? `<span><i class="t"></i>Target ${d.target}${u}</span>` : ""}</div>
+      ${lineChart(pts, d)}
+      <div class="tablewrap"><table><thead><tr><th>Date</th><th class="r">Attempts</th><th class="r">Average</th><th class="r">Best</th><th class="r">Time</th></tr></thead><tbody>
+      ${pts.slice().reverse().slice(0, 15).map(p => `<tr><td>${esc(fmtDate(p.date))}</td><td class="r">${p.n}</td><td class="r">${d.metric === "outof" ? p.s.avg.toFixed(1) + "/" + p.e.per : p.s.avg.toFixed(1)}</td><td class="r">${p.s.best}</td><td class="r">${p.seconds ? mmss(p.seconds) : "–"}</td></tr>`).join("")}
+      </tbody></table></div>
+    </article></section>`;
+}
+function viewHistory() { return historyList() + backupHTML(); }
+const STANDALONE = !(window.claude && typeof window.claude.use === "function");
+let backupDraft = "";
+const backupText = () => JSON.stringify({ app: "snooker-practice-log", v: 2, exported: new Date().toISOString(), lib, logs });
+function backupHTML() {
+  return `<section class="card"><h2>Backup</h2>
+    <p class="small muted">Copy everything (drills, session plans and history) as text to keep somewhere safe or move to another device. To restore, paste a backup below or choose a backup file.</p>
+    <div class="row"><button data-act="backup-copy">Copy backup</button>${STANDALONE ? `<button data-act="backup-file">Download backup file</button>` : ""}</div>
+    <textarea id="backup-text" placeholder="Paste a backup here to restore it">${esc(backupDraft)}</textarea>
+    <div class="row"><label class="btn" for="backup-file-in">Choose backup file</label><input id="backup-file-in" type="file" accept=".json,.txt,application/json,text/plain" hidden>
+      <button class="${armed === "restore" ? "danger armed" : ""}" data-act="backup-restore">${armed === "restore" ? "Tap to confirm restore" : "Restore from backup"}</button></div>
+    <p class="small muted">Restoring replaces your drills and session plans, and adds any sessions from the backup that aren't here yet.</p></section>`;
+}
+function historyList() {
+  if (!logs.length) return `<section class="stack"><h1>History</h1></section><div class="empty"><p>No sessions logged yet.</p><button class="primary" data-act="tab" data-id="home">Start a session</button></div>`;
+  let out = `<section class="stack"><h1>History</h1><p class="muted">${logs.length} sessions · ${logs.reduce((a, l) => a + (+l.minutes || 0), 0)} minutes in total</p></section>`, month = "";
+  logs.forEach(l => {
+    const m = parseISO(l.date).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    if (m !== month) { if (month) out += `</div></section>`; month = m; out += `<section class="stack"><h2>${esc(m)}</h2><div class="list">`; }
+    out += logCard(l, true);
+  });
+  return out + `</div></section>`;
+}
+
+function render() {
+  document.body.classList.toggle("running", route === "run");
+  const navFor = { "plan-edit": "plans", "drill-edit": "drills", "drill": "drills", run: "home" }[route] || route;
+  $("#tabs").innerHTML = TABS.map(t => `<button data-act="tab" data-id="${t.id}" ${navFor === t.id ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${t.icon}</svg>${t.label}</button>`).join("");
+  const v = { home: viewHome, plans: viewPlans, "plan-edit": viewPlanEdit, drills: viewDrills, drill: viewDrill, "drill-edit": viewDrillEdit, run: viewRun, progress: viewProgress, history: viewHistory }[route] || viewHome;
+  $("#view").innerHTML = v();
+  if (route === "run") { persistRun(); if (draft.phase === "running") { updateTimer(); startTick(); const i = $("#score-in"); if (i) i.focus(); } }
+}
+
+// ---------- Actions ----------
+let toastTimer;
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2600); }
+function arm(key) {
+  armed = key; clearTimeout(armTimer);
+  const redraw = () => { if (key === "dg-clear") redrawTools(); else render(); };
+  armTimer = setTimeout(() => { if (armed === key) { armed = null; redraw(); } }, 3500);
+  redraw();
+}
+function setPath(obj, path, val) { const ks = path.split("."); let o = obj; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = val; }
+function startRun(planId, planName, items) { go("run", newRun(planId, planName, items)); }
+
+document.addEventListener("click", ev => {
+  const b = ev.target.closest("[data-act]"); if (!b) return;
+  const act = b.dataset.act, id = b.dataset.id, i = +b.dataset.i, r = draft;
+  switch (act) {
+    case "tab": go(id); break;
+    case "start": { const p = lib.plans.find(p => p.id === id); if (p) startRun(p.id, p.name, clone(p.items).filter(it => drillById(it.drillId))); break; }
+    case "quick-log": startRun(null, "", []); break;
+    case "practise": { const d = drillById(id); startRun(null, "", [{ drillId: d.id, minutes: d.minutes }]); break; }
+    case "see-progress": progressDrill = id; go("progress"); break;
+    case "cancel": {
+      if (route === "drill-edit" && lib.drills.some(d => d.id === draft.id)) go("drill", { id: draft.id });
+      else go(route === "plan-edit" ? "plans" : route === "drill-edit" ? "drills" : "home");
+      break;
+    }
+    // Plans
+    case "new-plan": go("plan-edit", { id: newId("p"), name: "", items: [] }); break;
+    case "edit-plan": go("plan-edit", clone(lib.plans.find(p => p.id === id))); break;
+    case "add-item": { const d = lib.drills[0]; if (d) draft.items.push({ drillId: d.id, minutes: d.minutes }); render(); break; }
+    case "rm-item": draft.items.splice(i, 1); render(); break;
+    case "mv": { const j = i + +b.dataset.d; [draft.items[i], draft.items[j]] = [draft.items[j], draft.items[i]]; render(); break; }
+    case "save-plan": {
+      if (!draft.name.trim()) { toast("Give the session a name."); $("#plan-name").focus(); break; }
+      draft.name = draft.name.trim(); draft.items.forEach(it => { it.minutes = +it.minutes || 10; });
+      const k = lib.plans.findIndex(p => p.id === draft.id); if (k >= 0) lib.plans[k] = draft; else lib.plans.push(draft);
+      saveLib(); toast("Session saved"); go("plans"); break;
+    }
+    case "del-plan": if (armed !== "plan") { arm("plan"); break; } lib.plans = lib.plans.filter(p => p.id !== draft.id); saveLib(); toast("Session deleted"); go("plans"); break;
+    // Drills
+    case "view-drill": go("drill", { id }); break;
+    case "new-drill": go("drill-edit", { id: newId("d"), name: "", cat: "Potting", metric: "outof", per: 10, max: "", target: "", minutes: 10, how: "", diagram: { balls: onSpots(), lines: [], zones: [] } }); break;
+    case "edit-drill": go("drill-edit", clone(drillById(id))); break;
+    case "metric": draft.metric = b.dataset.v; render(); break;
+    case "save-drill": {
+      if (!draft.name.trim()) { toast("Give the drill a name."); $("#dr-name").focus(); break; }
+      draft.name = draft.name.trim(); draft.per = Math.max(1, +draft.per || 10); draft.minutes = Math.max(1, +draft.minutes || 10);
+      draft.target = draft.target === "" || draft.target == null ? "" : +draft.target; draft.max = draft.max === "" || draft.max == null ? "" : +draft.max;
+      const k = lib.drills.findIndex(d => d.id === draft.id); if (k >= 0) lib.drills[k] = draft; else lib.drills.push(draft);
+      saveLib(); toast("Drill saved"); go("drill", { id: draft.id }); break;
+    }
+    case "del-drill":
+      if (armed !== "drill") { arm("drill"); break; }
+      lib.drills = lib.drills.filter(d => d.id !== draft.id);
+      lib.plans.forEach(p => { p.items = p.items.filter(it => it.drillId !== draft.id); });
+      saveLib(); toast("Drill deleted"); go("drills"); break;
+    // Diagram editor
+    case "dg-tool": ed.tool = b.dataset.v; ed.sel = null; redrawSVG(); redrawTools(); break;
+    case "dg-spots": pushHist(); draft.diagram.balls = draft.diagram.balls.filter(x => !COLOURS.includes(x.t)).concat(onSpots()); ed.sel = null; redrawSVG(); redrawTools(); break;
+    case "dg-pack": pushHist(); draft.diagram.balls = draft.diagram.balls.filter(x => x.t !== "red").concat(pack()); ed.sel = null; redrawSVG(); redrawTools(); break;
+    case "dg-snap": ed.snap = !ed.snap; redrawTools(); break;
+    case "dg-arrow": ed.arrow = !ed.arrow; if (ed.sel && ed.sel.k === "l") { pushHist(); draft.diagram.lines[ed.sel.i].arrow = ed.arrow; redrawSVG(); } redrawTools(); break;
+    case "dg-undo": if (ed.hist.length) { draft.diagram = ed.hist.pop(); ed.sel = null; redrawSVG(); redrawTools(); } break;
+    case "dg-del": edDelete(); break;
+    case "dg-clear": if (armed !== "dg-clear") { arm("dg-clear"); break; } pushHist(); draft.diagram = emptyDg(); ed.sel = null; armed = null; redrawSVG(); redrawTools(); break;
+    // Runner
+    case "run-resume": { const p = LS.get("snk.run"); if (p) go("run", p); break; }
+    case "run-discard-home": if (armed !== "run-discard") { arm("run-discard"); break; } LS.del("snk.run"); armed = null; render(); break;
+    case "run-leave": persistRun(); keepAwake(false); go("home"); toast("Session kept. Resume it from Today."); break;
+    case "run-start": {
+      unlockAudio(); const d = curDrill(r); if (!d) break;
+      r.entries.push({ drillId: d.id, drillName: d.name, cat: d.cat, metric: d.metric, per: d.per, scores: [], seconds: 0, plannedMin: +r.items[r.idx].minutes || d.minutes });
+      r.cur = r.entries.length - 1; r.phase = "running"; r.started = Date.now(); r.elapsed = 0; r.paused = false; r.beeped = false; r.input = ""; r.pane = "pad";
+      keepAwake(true); render(); window.scrollTo(0, 0); break;
+    }
+    case "run-pause":
+      if (r.paused) { r.paused = false; r.started = Date.now(); keepAwake(true); } else { r.elapsed = runElapsed(r); r.paused = true; r.started = null; }
+      b.textContent = r.paused ? "Resume" : "Pause"; persistRun(); updateTimer(); break;
+    case "run-stop": {
+      if (r.input && String(r.input).trim()) { const res = validate(r.input, scoringOf(r)); if (!res.err) curEntry(r).scores.push(res.v); }
+      stopCurrent(r); advance(r); break;
+    }
+    case "run-finish": {
+      if (r.input && String(r.input).trim()) { const res = validate(r.input, scoringOf(r)); if (!res.err) curEntry(r).scores.push(res.v); }
+      stopCurrent(r); r.idx = r.items.length; r.phase = "summary"; clearInterval(tick); persistRun(); render(); window.scrollTo(0, 0); break;
+    }
+    case "run-skip": advance(r); break;
+    case "run-end": r.idx = r.items.length; r.phase = "summary"; persistRun(); render(); break;
+    case "pane": r.pane = b.dataset.v; persistRun(); render(); break;
+    case "pad": {
+      const k = b.dataset.k, er = $("#paderr"); if (er) er.textContent = "";
+      if (k === "ok") { addScore(r.input); break; }
+      const cur = String(r.input || "");
+      if (k === "back") r.input = cur.slice(0, -1);
+      else if (cur.length < 3) r.input = (cur === "0" ? "" : cur) + k;
+      renderScores(); break;
+    }
+    case "add-score": addScore($("#score-in").value); break;
+    case "undo-score": curEntry(r).scores.pop(); persistRun(); renderScores(); break;
+    case "run-add": {
+      const d = drillById($("#run-add").value); if (!d) break;
+      r.items.push({ drillId: d.id, minutes: d.minutes }); r.idx = r.items.length - 1; r.phase = "setup"; persistRun(); render(); window.scrollTo(0, 0); break;
+    }
+    case "run-save": {
+      const total = Math.round(r.entries.reduce((a, e) => a + e.seconds, 0) / 60);
+      const log = { id: r.id, date: r.date || todayISO(), planId: r.planId, planName: r.planName, minutes: r.minutes == null || r.minutes === "" ? total : (+r.minutes || 0), notes: r.notes || "", created: r.created,
+        entries: r.entries.map(e => ({ drillId: e.drillId, drillName: e.drillName, cat: e.cat, metric: e.metric, per: e.per, scores: e.scores, seconds: e.seconds, plannedMin: e.plannedMin })) };
+      saveLog(log); LS.del("snk.run"); toast("Session saved"); go("home"); break;
+    }
+    case "run-discard": if (armed !== "run-discard") { arm("run-discard"); break; } LS.del("snk.run"); keepAwake(false); toast("Session discarded"); go("home"); break;
+    // History & progress
+    case "del-log": if (armed !== "log:" + id) { arm("log:" + id); break; } removeLog(id); armed = null; toast("Session deleted"); render(); break;
+    case "pick-drill": progressDrill = id; render(); break;
+    // Backup
+    case "backup-copy": {
+      const txt = backupText();
+      const fallback = () => { backupDraft = txt; const ta = $("#backup-text"); ta.value = txt; ta.focus(); ta.select(); toast("Backup is in the box below. Select it all and copy it."); };
+      try { navigator.clipboard.writeText(txt).then(() => toast("Backup copied. Paste it somewhere safe, like a note or an email to yourself."), fallback); } catch (e) { fallback(); }
+      break;
+    }
+    case "backup-file": {
+      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([backupText()], { type: "application/json" }));
+      a.download = "snooker-practice-backup-" + todayISO() + ".json"; document.body.appendChild(a); a.click(); a.remove(); break;
+    }
+    case "backup-restore": {
+      let data = null; try { data = JSON.parse(backupDraft); } catch (e) {}
+      if (!data || !data.lib || !Array.isArray(data.lib.drills) || !Array.isArray(data.logs)) { toast("That doesn't look like a backup. Paste the whole text you copied."); break; }
+      if (armed !== "restore") { arm("restore"); break; }
+      lib = normalizeLib(data.lib); saveLib();
+      const have = new Set(logs.map(l => l.id));
+      data.logs.filter(l => l && l.id && l.date && !have.has(l.id)).map(normLog).forEach(saveLog);
+      armed = null; backupDraft = ""; toast("Backup restored"); render(); break;
+    }
+  }
+});
+document.addEventListener("keydown", ev => {
+  const tgt = ev.target;
+  if (tgt && tgt.id === "score-in" && ev.key === "Enter") { ev.preventDefault(); addScore(tgt.value); return; }
+  if (ev.key === "Enter" && tgt && tgt.classList && tgt.classList.contains("card") && tgt.dataset.act) { tgt.click(); return; }
+  if (route === "drill-edit" && ed && ed.sel && (ev.key === "Delete" || ev.key === "Backspace") && !["INPUT", "TEXTAREA", "SELECT"].includes(tgt && tgt.tagName)) { ev.preventDefault(); edDelete(); }
+});
+document.addEventListener("input", ev => {
+  const el = ev.target;
+  if (el.id === "backup-text") { backupDraft = el.value; return; }
+  if (el.id === "score-in" && draft) { draft.input = el.value; const er = $("#paderr"); if (er) er.textContent = ""; return; }
+  if (!el.dataset || !el.dataset.bind || !draft) return;
+  setPath(draft, el.dataset.bind, el.value);
+  if (el.dataset.total) { const t = $("#plan-total"); if (t) t.textContent = planMinutes(draft) + " min in total"; }
+  if (route === "run") persistRun();
+});
+document.addEventListener("change", ev => {
+  const el = ev.target;
+  if (el.id === "backup-file-in" && el.files && el.files[0]) {
+    const fr = new FileReader(); fr.onload = () => { backupDraft = String(fr.result || ""); const ta = $("#backup-text"); if (ta) ta.value = backupDraft; toast("Backup file loaded. Tap Restore from backup."); }; fr.readAsText(el.files[0]); return;
+  }
+  if (!el.dataset || !el.dataset.rerender || !draft) return;
+  const m = /^items\.(\d+)\.drillId$/.exec(el.dataset.bind);
+  if (m) { const d = drillById(el.value); if (d) draft.items[+m[1]].minutes = d.minutes; }
+  render();
+});
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && route === "run" && draft && draft.phase === "running" && !draft.paused) keepAwake(true); });
+
+route = routeFromHash();
+render();
+connect();
+})();
+</script>
