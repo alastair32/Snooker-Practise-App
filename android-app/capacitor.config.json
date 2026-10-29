@@ -1,0 +1,6 @@
+{
+  "appId": "io.github.alastair32.snookerpractice",
+  "appName": "Practice Log",
+  "webDir": "www",
+  "android": { "allowMixedContent": false }
+}
