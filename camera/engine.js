@@ -278,6 +278,9 @@
         if (!spotOff.includes(e.colour)) spotOff.push(e.colour);
       }
       this.spotLog = []; this.spotSince = t;
+      // clearing the colours, potted colours stay down: one that left its spot and is back on it was put back by hand
+      // (unless other colours came back too: that is the table being set up again after the last colour went down)
+      if (this.due && spotOn.length === 1) { const k = spotOff.indexOf(spotOn[0]); if (k >= 0) spotOff.splice(k, 1); }
       // a colour put back on its spot means hands on the table: a flicker of a few frames is the hand, not a ball
       if (spotOn.length) {
         for (let i = rolled.length - 1; i >= 0; i--) if (rolled[i].path.length < 6) rolled.splice(i, 1);
@@ -321,6 +324,13 @@
           const fromSpot = potTracks.some(p => !p.used && !p.white && dist(p.start, this.spots[c]) < 30);
           if (w && moved.has(w) && dist(w, this.spots[c]) > 20 && !fromSpot) continue;   // knocked off its spot, still on the table
           if (!fromSpot && cameToRest()) { if (w) w.hidden = true; continue; }
+          // followed from its spot to a ball now resting there that nothing else accounts for (its colour can read
+          // wrongly in shadow, so it wasn't matched by colour): it was knocked there
+          if (w && !fromSpot) {
+            const tr = rolled.find(tr => Math.hypot(tr.path[0][1] - this.spots[c].x, tr.path[0][2] - this.spots[c].y) < 15);
+            const e = tr && tr.path[tr.path.length - 1], di = e ? [...free].find(i => Math.hypot(D[i].x - e[1], D[i].y - e[2]) < 10) : undefined;
+            if (di !== undefined) { free.delete(di); Object.assign(w, { x: D[di].x, y: D[di].y, hidden: false }); moved.add(w); continue; }
+          }
           const near = potTracks.filter(p => !p.used && !p.white && dist(p.start, this.spots[c]) < 60).sort((a, b) => dist(a.start, this.spots[c]) - dist(b.start, this.spots[c]));
           const pt = near[0] || null; if (pt) pt.used = true;
           pots.push(this._pot(w || { type: c }, pt)); offSpots.push(this.spots[c]); this.lastSpotPot = { colour: c, t };
