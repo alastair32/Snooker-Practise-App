@@ -53,7 +53,7 @@
         // how unlike a reading is to a remembered look: colour, plus how much of the patch is ball
         const d = (l, f) => labDist(lab, l) + 40 * Math.abs(sp.fg - f);
         const present = S.state === "on" ? sp.fg >= 0.12 && d(S.sig, S.fg) < 20
-          : sp.fg >= 0.12 && d(S.sig, S.fg) < 30 && (!S.off || d(S.sig, S.fg) < d(S.off, S.offFg));
+          : sp.fg >= 0.12 && d(S.sig, S.fg) < 30 && (!S.off || d(S.sig, S.fg) < d(S.off, S.offFg) || d(S.sig, S.fg) < 10);
         // a colour already marked off whose spot now shows bare cloth: it has gone for certain
         if (S.state === "off" && !S.empty && sp.fg < 0.12) {
           S.erun = (S.erun || 0) + 1;
@@ -74,7 +74,12 @@
     }
     on(c) { const S = this.s[this.names.indexOf(c)]; return !!S && S.state === "on"; }
     // the ball was only nudged on its spot: take its new look as its look
-    keep(c) { const S = this.s[this.names.indexOf(c)]; if (S && S.state === "off" && S.off) { S.state = "on"; S.sig = S.off; S.fg = S.offFg; S.empty = false; } }
+    // (only when it still looks like that colour: a red rolling over the spot, or a leg behind it, mustn't become its look)
+    keep(c) {
+      const S = this.s[this.names.indexOf(c)]; if (!S || S.state !== "off" || !S.off) return;
+      S.state = "on"; S.empty = false;
+      if (labDist(S.off, S.sig) < 25) { S.sig = S.off; S.fg = S.offFg; }
+    }
     pending() { return this.s.some(S => S.state && S.run.length > 0); }
   }
   const mean = arr => arr.reduce((a, l) => a.map((v, j) => v + l[j] / arr.length), [0, 0, 0]);
@@ -229,6 +234,9 @@
       // a ball carried by hand don't start from a resting ball's position, or are hidden while they move.
       const restingAt = (p, r = 12) => before.some(w => Math.hypot(w.x - p[1], w.y - p[2]) < r) ||
         this.prevClusters.some(c => p[1] >= c.x0 - r + 2 && p[1] <= c.x1 + r - 2 && p[2] >= c.y0 - r + 2 && p[2] <= c.y1 + r - 2);
+      // a fast ball can be first seen a whole frame's travel from where it rested: look back along its line up to 1.5 frames
+      const restedBehind = (P, r) => { if (P.length < 2) return false; const dx = P[0][1] - P[1][1], dy = P[0][2] - P[1][2];
+        return [0.25, 0.5, 0.75, 1, 1.25, 1.5].some(k => restingAt([0, P[0][1] + k * dx, P[0][2] + k * dy], r)); };
       const since = this.activeSince - 0.5;
       const rolled = !wasActive ? [] : this.tracks.filter(tr => {
         if (tr.last < since) return false;
@@ -240,15 +248,18 @@
         const end = seg[seg.length - 1];
         const ontoOther = before.some(w => Math.hypot(w.x - end[1], w.y - end[2]) < 12 && Math.hypot(w.x - seg[0][1], w.y - seg[0][2]) > 12);
         // an object ball starts a little way from where it rested (it is merged with the cue ball at contact)
-        return far >= 40 && restingAt(seg[0], tr.white < tr.path.length / 2 ? 25 : 12) && nearPlayer <= 0.3 && !ontoOther;
+        // a track that wandered off a colour spot while the spot still shows its ball (e.g. onto the player's legs
+        // behind the baulk cushion) is not that colour rolling
+        const offStillOnSpot = COLOURS.some(c => this.spots[c] && this.spotWatch.on(c) && Math.hypot(seg[0][1] - this.spots[c].x, seg[0][2] - this.spots[c].y) < 8 &&
+          Math.hypot(end[1] - this.spots[c].x, end[2] - this.spots[c].y) > 20);
+        const r = tr.white < tr.path.length / 2 ? 25 : 12;
+        return far >= 40 && restingAt(seg[0], r) && nearPlayer <= 0.3 && !ontoOther && !offStillOnSpot;
       });
       // a ball that rattled in the jaws and stayed out is back on the table near where its track was lost
       const potTracks = (wasActive ? this._potTracks(this.activeSince - 0.5) : [])
         .filter(p => {
           // it came from where a ball was resting: one of its first points, or a frame before it was first seen
-          // (a fast ball can be first seen a whole frame's travel away, so look back along its line up to 1.5 frames)
-          const P = p.tr.path, dx = P.length > 1 ? P[0][1] - P[1][1] : 0, dy = P.length > 1 ? P[0][2] - P[1][2] : 0;
-          return P.slice(0, 3).some(q => restingAt(q, 25)) || [0.25, 0.5, 0.75, 1, 1.25, 1.5].some(k => restingAt([0, P[0][1] + k * dx, P[0][2] + k * dy], 25));
+          return p.tr.path.slice(0, 3).some(q => restingAt(q, 25)) || restedBehind(p.tr.path, 25);
         })
         .filter(p => !D.some(d => dist(d, p.tr) < 45 && !before.some(b => dist(b, d) < 7)) &&
           !this.tracks.some(o => o !== p.tr && o.path.length >= 5 && o.first > p.tr.last - 0.2 && o.first < p.tr.last + 2 && Math.hypot(o.path[0][1] - p.tr.x, o.path[0][2] - p.tr.y) < 45));
@@ -273,7 +284,13 @@
         for (let i = potTracks.length - 1; i >= 0; i--) if (potTracks[i].tr.path.length < 6) potTracks.splice(i, 1);
       }
       const objMoved = rolled.some(tr => tr.white < tr.path.length / 2) || spotOff.length > 0;
-      const shot = objMoved || potTracks.some(p => !p.white);
+      // a coloured ball seen running a long way in the open is a shot, even if it was first picked up away from where it rested
+      const longRun = wasActive && this.tracks.some(tr => {
+        if (tr.last < since || tr.white >= tr.path.length / 2) return false;
+        const seg = tr.path.filter(q => q[0] >= since); if (seg.length < 10 || seg.filter(q => q[3]).length > seg.length * 0.1) return false;
+        return Math.hypot(seg[seg.length - 1][1] - seg[0][1], seg[seg.length - 1][2] - seg[0][2]) >= 100;
+      });
+      const shot = objMoved || potTracks.some(p => !p.white) || longRun;
       if (this.debug) this.debug({ t, since: this.activeSince, spotOff, spotOn, rolled: rolled.map(tr => [tr.first, tr.last, tr.path.length, Math.round(tr.path[0][1]), Math.round(tr.path[0][2]), Math.round(tr.x), Math.round(tr.y), tr.white]),
         pots: potTracks.map(p => [p.tr.first, p.tr.last, p.pocket, Math.round(p.start.x), Math.round(p.start.y)]),
         recent: this.tracks.filter(tr => tr.last >= this.activeSince - 0.5 && tr.path.length >= 3).map(tr => [tr.first, tr.last, tr.path.length, Math.round(tr.path[0][1]), Math.round(tr.path[0][2]), Math.round(tr.x), Math.round(tr.y)]) });
@@ -294,8 +311,10 @@
         // An object ball followed to where it came to rest, with no ball seen there now: it is still on the table
         // but lost from view (in the jaws, against a cushion, or behind the player), so a ball missing after this
         // shot went there rather than into a pocket. (A potted ball's track ends while it is still moving.)
-        const restEnds = rolled.filter(tr => { const P = tr.path, n = P.length; if (n < 6 || tr.white >= n / 2 || potTracks.some(p => p.tr === tr)) return false;
-          const e = P[n - 1]; return P.slice(n - 3).every(q => Math.hypot(q[1] - e[1], q[2] - e[2]) < 4) && !D.some(d => Math.hypot(d.x - e[1], d.y - e[2]) < 10); });
+        const restEnds = this.tracks.filter(tr => { const P = tr.path, n = P.length; if (n < 6 || tr.last < since || tr.white >= n / 2 || potTracks.some(p => p.tr === tr)) return false;
+          const seg = P.filter(q => q[0] >= since); if (seg.length < 6) return false;
+          const e = P[n - 1]; return Math.hypot(e[1] - seg[0][1], e[2] - seg[0][2]) >= 40 && P.slice(n - 3).every(q => Math.hypot(q[1] - e[1], q[2] - e[2]) < 4) &&
+            !D.some(d => Math.hypot(d.x - e[1], d.y - e[2]) < 10); });
         const cameToRest = () => { const tr = restEnds.shift(); return !!tr; };
         for (const c of struck ? spotOff : []) {
           const w = W.filter(w => w.type === c).sort((x, y) => dist(x, this.spots[c]) - dist(y, this.spots[c]))[0];
