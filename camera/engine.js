@@ -127,24 +127,28 @@
 
     // Follow moving balls from frame to frame, so a ball running into a pocket can be seen going there.
     _trackMoving(t, balls, occ) {
-      const used = new Set();
+      // match tracks to balls closest pair first, so a fast new track can't take a resting ball from its own track
+      const used = new Set(), pairs = [];
       for (const tr of this.tracks) {
         if (tr.done) continue;
         const pred = { x: tr.x + tr.vx, y: tr.y + tr.vy };
-        // fast balls cover 50+ px between frames: wide gate until the track has a speed to predict with
-        let bi = -1, bd = tr.path.length > 1 ? 45 : 80;
+        // fast balls cover 50-100 px between frames: wide gate until the track has a speed to predict with
+        const gate = tr.path.length > 1 ? 45 : 120;
         // the cue ball hands over to the object ball at contact: never join a white ball onto a coloured track or back
         const wasWhite = tr.recentWhite > 1;
-        balls.forEach((b, i) => { if (used.has(i) || (tr.path.length >= 3 && !!b.white !== wasWhite)) return; const d = dist(b, pred); if (d < bd) { bd = d; bi = i; } });
-        if (bi >= 0) {
-          const b = balls[bi]; used.add(bi);
-          tr.vx = 0.5 * tr.vx + 0.5 * (b.x - tr.x); tr.vy = 0.5 * tr.vy + 0.5 * (b.y - tr.y);
-          tr.x = b.x; tr.y = b.y; tr.last = t; tr.path.push([t, b.x, b.y, occ.some(o => inBox(b, o, 4)) ? 1 : 0]); tr.labs.push(b.lab); if (b.white) tr.white++;
-          tr.recentWhite = Math.min(3, Math.max(0, tr.recentWhite + (b.white ? 1 : -1)));
-        } else if (t - tr.last > 0.35) {
-          tr.done = true; tr.endOccluded = occ.some(o => inBox(tr, o, 10));
-        }
+        balls.forEach((b, i) => { if ((tr.path.length >= 3 ? !!b.white !== wasWhite : tr.path.length === 1 && !!b.white !== !!tr.white)) return; const d = dist(b, pred); if (d < gate) pairs.push([d, tr, i]); });
       }
+      pairs.sort((a, b) => a[0] - b[0]);
+      const taken = new Set();
+      for (const [, tr, bi] of pairs) {
+        if (taken.has(tr) || used.has(bi)) continue;
+        taken.add(tr); used.add(bi);
+        const b = balls[bi];
+        tr.vx = 0.5 * tr.vx + 0.5 * (b.x - tr.x); tr.vy = 0.5 * tr.vy + 0.5 * (b.y - tr.y);
+        tr.x = b.x; tr.y = b.y; tr.last = t; tr.path.push([t, b.x, b.y, occ.some(o => inBox(b, o, 4)) ? 1 : 0]); tr.labs.push(b.lab); if (b.white) tr.white++;
+        tr.recentWhite = Math.min(3, Math.max(0, tr.recentWhite + (b.white ? 1 : -1)));
+      }
+      for (const tr of this.tracks) if (!tr.done && !taken.has(tr) && t - tr.last > 0.35) { tr.done = true; tr.endOccluded = occ.some(o => inBox(tr, o, 10)); }
       balls.forEach((b, i) => {
         if (used.has(i)) return;
         this.tracks.push({ id: this.nid++, x: b.x, y: b.y, vx: 0, vy: 0, first: t, last: t, path: [[t, b.x, b.y, occ.some(o => inBox(b, o, 4)) ? 1 : 0]], labs: [b.lab], white: b.white ? 1 : 0, recentWhite: b.white ? 3 : 0, done: false });
@@ -242,8 +246,9 @@
       const potTracks = (wasActive ? this._potTracks(this.activeSince - 0.5) : [])
         .filter(p => {
           // it came from where a ball was resting: one of its first points, or a frame before it was first seen
-          const P = p.tr.path, back = P.length > 1 ? [0, 2 * P[0][1] - P[1][1], 2 * P[0][2] - P[1][2]] : P[0];
-          return P.slice(0, 3).some(q => restingAt(q, 25)) || restingAt(back, 25);
+          // (a fast ball can be first seen a whole frame's travel away, so look back along its line up to 1.5 frames)
+          const P = p.tr.path, dx = P.length > 1 ? P[0][1] - P[1][1] : 0, dy = P.length > 1 ? P[0][2] - P[1][2] : 0;
+          return P.slice(0, 3).some(q => restingAt(q, 25)) || [0.25, 0.5, 0.75, 1, 1.25, 1.5].some(k => restingAt([0, P[0][1] + k * dx, P[0][2] + k * dy], 25));
         })
         .filter(p => !D.some(d => dist(d, p.tr) < 45 && !before.some(b => dist(b, d) < 7)) &&
           !this.tracks.some(o => o !== p.tr && o.path.length >= 5 && o.first > p.tr.last - 0.2 && o.first < p.tr.last + 2 && Math.hypot(o.path[0][1] - p.tr.x, o.path[0][2] - p.tr.y) < 45));
@@ -262,6 +267,11 @@
         if (!spotOff.includes(e.colour)) spotOff.push(e.colour);
       }
       this.spotLog = []; this.spotSince = t;
+      // a colour put back on its spot means hands on the table: a flicker of a few frames is the hand, not a ball
+      if (spotOn.length) {
+        for (let i = rolled.length - 1; i >= 0; i--) if (rolled[i].path.length < 6) rolled.splice(i, 1);
+        for (let i = potTracks.length - 1; i >= 0; i--) if (potTracks[i].tr.path.length < 6) potTracks.splice(i, 1);
+      }
       const objMoved = rolled.some(tr => tr.white < tr.path.length / 2) || spotOff.length > 0;
       const shot = objMoved || potTracks.some(p => !p.white);
       if (this.debug) this.debug({ t, since: this.activeSince, spotOff, spotOn, rolled: rolled.map(tr => [tr.first, tr.last, tr.path.length, Math.round(tr.path[0][1]), Math.round(tr.path[0][2]), Math.round(tr.x), Math.round(tr.y), tr.white]),
@@ -281,10 +291,17 @@
           return Math.hypot(seg[seg.length - 1][1] - seg[0][1], seg[seg.length - 1][2] - seg[0][2]) >= 60 && seg.filter(q => q[3]).length <= seg.length * 0.1;
         });
         const struck = rolled.length > 0 || potTracks.length > 0 || freeRoll;
+        // An object ball followed to where it came to rest, with no ball seen there now: it is still on the table
+        // but lost from view (in the jaws, against a cushion, or behind the player), so a ball missing after this
+        // shot went there rather than into a pocket. (A potted ball's track ends while it is still moving.)
+        const restEnds = rolled.filter(tr => { const P = tr.path, n = P.length; if (n < 6 || tr.white >= n / 2 || potTracks.some(p => p.tr === tr)) return false;
+          const e = P[n - 1]; return P.slice(n - 3).every(q => Math.hypot(q[1] - e[1], q[2] - e[2]) < 4) && !D.some(d => Math.hypot(d.x - e[1], d.y - e[2]) < 10); });
+        const cameToRest = () => { const tr = restEnds.shift(); return !!tr; };
         for (const c of struck ? spotOff : []) {
           const w = W.filter(w => w.type === c).sort((x, y) => dist(x, this.spots[c]) - dist(y, this.spots[c]))[0];
           const fromSpot = potTracks.some(p => !p.used && !p.white && dist(p.start, this.spots[c]) < 30);
           if (w && moved.has(w) && dist(w, this.spots[c]) > 20 && !fromSpot) continue;   // knocked off its spot, still on the table
+          if (!fromSpot && cameToRest()) { if (w) w.hidden = true; continue; }
           const near = potTracks.filter(p => !p.used && !p.white && dist(p.start, this.spots[c]) < 60).sort((a, b) => dist(a.start, this.spots[c]) - dist(b.start, this.spots[c]));
           const pt = near[0] || null; if (pt) pt.used = true;
           pots.push(this._pot(w || { type: c }, pt)); offSpots.push(this.spots[c]); this.lastSpotPot = { colour: c, t };
@@ -295,6 +312,7 @@
           if (w.type === "cue" && !potTracks.some(p => p.white && !p.used)) { w.hidden = true; continue; }
           if (offSpots.some(sp => dist(sp, w) < 15)) { this.world = this.world.filter(x => x !== w); continue; }   // was that colour all along
           const pt = potTracks.find(p => !p.used && dist(p.start, w) < 25) || null;
+          if (!pt && w.type !== "cue" && cameToRest()) { w.hidden = true; continue; }
           // reds placed by guesswork inside a cluster are only potted when seen going into a pocket
           if (!pt && w.guessed) { w.hidden = true; continue; }
           if (pt) pt.used = true;
@@ -305,6 +323,9 @@
           // a ball that ran into a pocket from inside a cluster (e.g. a red off the line): take the nearest hidden ball
           const cand = this._hiddenSource(W, pt, pots);
           if (cand) { pt.used = true; pots.push(this._pot(cand, pt)); }
+          // a red-looking ball followed from rest into a pocket when a red is due, with no red known there:
+          // reds put back into the line by hand can't be seen one by one, so trust the track
+          else if (this.prefer === "red" && pt.lab[1] >= 108) { pt.used = true; pots.push(this._pot({ type: "red", guessed: true }, pt)); }
         }
         for (const p of pots) { this.world = this.world.filter(w => w !== p.ball); if (p.type !== "red" && p.type !== "cue") this.potted.push(p.type); }
         this.colourPots = (this.colourPots || 0) + pots.filter(p => COLOURS.includes(p.type)).length;
