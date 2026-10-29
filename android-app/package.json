@@ -1,0 +1,12 @@
+{
+  "name": "snooker-practice-android",
+  "private": true,
+  "description": "Android app (APK) wrapping the Practice Log web app with Capacitor. Built by .github/workflows/android.yml.",
+  "dependencies": {
+    "@capacitor/android": "6.2.1",
+    "@capacitor/cli": "6.2.1",
+    "@capacitor/core": "6.2.1",
+    "@capacitor/filesystem": "6.0.4",
+    "@capacitor/share": "6.0.4"
+  }
+}

@@ -6,6 +6,10 @@ An installable web app for snooker practice: design drills with table diagrams, 
 - `src/snooker-practice.html`: the page source.
 - `tools/build-pwa.py`: rebuilds `index.html` from the source: `python3 tools/build-pwa.py src/snooker-practice.html index.html`
 
-- `camera/`: test page for camera tracking (open `camera/` on the site). It finds the table and counts colour clearances live from the phone camera, or from a video file. `camera/vision.js` holds the vision code. `tools/analyse-video.js` runs the same code on a video with Node and ffmpeg: `node tools/analyse-video.js session.mp4`
+- `camera/`: camera tracking. `vision.js` finds the table and the balls in a frame; `engine.js` keeps track of which ball is which (starting from the drill diagram, watching the colour spots, following the respot rules), spots pots and misses, and scores attempts by the drill's metric (`DrillScorer`) or a two-player frame (`MatchScorer`). The app uses both when "Track with camera" is on. `camera/index.html` is the older colour-clearance test page.
+- `tools/dump-detections.js` saves a video's detections to JSON lines; `tools/replay.js` runs the tracker and scorer over them (`node tools/replay.js det.jsonl lineup`), which is how the engine is checked against recorded drills.
+- `android-app/`: the Android app (APK), the same web app wrapped with Capacitor. `.github/workflows/android.yml` builds it on every push (download it from the run's artifacts) and, from `main`, attaches `practice-log.apk` to the `android-latest` release. To sign every build with the same key (so a new APK installs over the old one and keeps its data), add repository secrets `ANDROID_KEYSTORE_BASE64` (the keystore file, base64) and `ANDROID_KEYSTORE_PASSWORD`, with key alias `practicelog`; without them each build gets a throwaway debug key. The app keeps its own data, separate from the browser version: move it across with History, then Backup.
+
+Camera tips: put the phone behind the black end, high enough to see all four pockets, and keep clear of the table for a few seconds while it finds the table.
 
 Data is stored on the device. Use History, then Backup, to copy or restore it.

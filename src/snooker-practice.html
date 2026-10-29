@@ -1099,7 +1099,23 @@ function recStop() {
   });
 }
 const vidExt = b => /mp4/.test(b.type) ? "mp4" : "webm";
-function vidLink(b, name) { b.url = b.url || URL.createObjectURL(b); return `<a href="${b.url}" download="${esc(name)}.${vidExt(b)}">${esc(name)}</a> <span class="muted small">${(b.size / 1048576).toFixed(0)} MB</span>`; }
+// Saving a file: a download link in the browser; in the Android app (a web view, which can't download)
+// the file is written to the app's cache and handed to the share sheet (Save to Files, Drive, WhatsApp...).
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const blobs = {};
+async function saveBlob(blob, name) {
+  if (!NATIVE) {
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); return;
+  }
+  try {
+    const { Filesystem, Share } = window.Capacitor.Plugins;
+    const data = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(",")[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
+    const w = await Filesystem.writeFile({ path: name, data, directory: "CACHE" });
+    await Share.share({ title: name, files: [w.uri] });
+  } catch (e) { if (!/cancel/i.test(String(e && e.message))) toast("Couldn't save the file: " + (e && e.message || e)); }
+}
+function vidLink(b, name) { b.url = b.url || URL.createObjectURL(b); blobs[b.url] = b; return `<a href="${b.url}" download="${esc(name)}.${vidExt(b)}">${esc(name)}</a> <span class="muted small">${(b.size / 1048576).toFixed(0)} MB</span>`; }
 
 // ---- drills ----
 function camBeginDrill(r) {
@@ -1190,6 +1206,8 @@ function setPath(obj, path, val) { const ks = path.split("."); let o = obj; for 
 function startRun(planId, planName, items) { cam.best = {}; cam.session = null; go("run", newRun(planId, planName, items)); }
 
 document.addEventListener("click", ev => {
+  const dl = ev.target.closest("a[download]");
+  if (dl && NATIVE && blobs[dl.href]) { ev.preventDefault(); saveBlob(blobs[dl.href], dl.getAttribute("download")); return; }
   const b = ev.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act, id = b.dataset.id, i = +b.dataset.i, r = draft;
   switch (act) {
@@ -1326,8 +1344,7 @@ document.addEventListener("click", ev => {
       break;
     }
     case "backup-file": {
-      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([backupText()], { type: "application/json" }));
-      a.download = "snooker-practice-backup-" + todayISO() + ".json"; document.body.appendChild(a); a.click(); a.remove(); break;
+      saveBlob(new Blob([backupText()], { type: "application/json" }), "snooker-practice-backup-" + todayISO() + ".json"); break;
     }
     case "backup-restore": {
       let data = null; try { data = JSON.parse(backupDraft); } catch (e) {}
