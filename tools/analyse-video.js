@@ -1,11 +1,16 @@
 // Run the camera page's vision code on a video file with Node + ffmpeg, to test it on recorded sessions.
 // Usage: node tools/analyse-video.js <video> [calibration-time-seconds] [frames-per-second]
 const { execFileSync, spawn } = require("child_process");
+// Frame size after ffmpeg applies the phone's rotation flag (ffprobe reports the stored size).
+function frameSize(video) {
+  const ppm = execFileSync("ffmpeg", ["-v", "error", "-i", video, "-frames:v", "1", "-f", "image2pipe", "-vcodec", "ppm", "-"], { maxBuffer: 1 << 28 });
+  const [, w, h] = ppm.subarray(0, 32).toString("latin1").split(/\s+/);
+  return [+w, +h];
+}
 const V = require("../camera/vision.js");
 
 const [video, calT = "10", fps = "6"] = process.argv.slice(2);
-const probe = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height", "-of", "csv=p=0", video]).toString().trim().split(",").map(Number);
-const [FW, FH] = probe;
+const [FW, FH] = frameSize(video);
 const still = execFileSync("ffmpeg", ["-v", "error", "-ss", calT, "-i", video, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"], { maxBuffer: 1 << 28 });
 const quad = V.findTable({ data: still, width: FW, height: FH });
 if (!quad) { console.error("No table found"); process.exit(1); }

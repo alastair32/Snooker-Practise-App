@@ -7,6 +7,13 @@
   // Ball and table sizes below are tuned at "1080 scale": the near cushion of the table about 594 px wide.
   // Frames are cropped to the table and scaled to that size before counting (see Calibration).
   const NEAR_WIDTH = 594;
+  // Spots in table mm from the far-left corner, camera at the black end: the baulk colours are furthest away.
+  const SPOT_NAMES = ["yellow", "green", "brown", "blue", "pink", "black"];
+  // Pixel tests (OpenCV Lab) for picking out each colour among touching balls, e.g. the black against reds.
+  const SPOT_LIKE = { black: (L, a) => L < 140 && a < 110, pink: (L, a) => L > 200 && a > 128, blue: (L, a, b) => b < 125,
+    yellow: (L, a, b) => b > 180, green: (L, a) => a < 100, brown: (L, a) => a > 115 && L < 200 };
+  const SPOT_MM = (() => { const W = 1778, L = 3569;
+    return { yellow: [W / 2 - 292, 737], brown: [W / 2, 737], green: [W / 2 + 292, 737], blue: [W / 2, L / 2], pink: [W / 2, L * 3 / 4], black: [W / 2, L - 324] }; })();
   const TABLE_MM = [1778, 3569];
 
   // ---- colour ----------------------------------------------------------------------------
@@ -147,13 +154,22 @@
       }
       inside[y * W + x] = ok ? 1 : 0;
     }
+    // pixels on the rim of the inside mask: a big blob touching it comes from outside the table (player, cue)
+    const rim = new Uint8Array(W * H);
+    for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
+      const i = y * W + x; if (!inside[i]) continue;
+      if (!inside[i - 2] || !inside[i + 2] || !inside[i - 2 * W] || !inside[i + 2 * W]) rim[i] = 1;
+    }
     const Hm = homography([[0, 0], [TABLE_MM[0], 0], TABLE_MM, [0, TABLE_MM[1]]], q);
     const [TW, TL] = TABLE_MM;
     const pockets = [[0, 0], [TW, 0], [0, TL / 2], [TW, TL / 2], [0, TL], [TW, TL]].map(p => apply(Hm, p));
-    return { quad, crop: { sx, sy, sw, sh }, W, H, scale, inside, pockets, cloth: null };
+    // colour spots, with the camera at the black end (baulk furthest away)
+    const spots = SPOT_NAMES.map(c => apply(Hm, SPOT_MM[c]));
+    return { quad, crop: { sx, sy, sw, sh }, W, H, scale, inside, rim, pockets, spots, Hm, Hinv: homography(q, [[0, 0], [TABLE_MM[0], 0], TABLE_MM, [0, TABLE_MM[1]]]), cloth: null };
   }
 
   // ---- counting balls in one frame -------------------------------------------------------
+  const median = v => { const s = v.slice().sort((a, b) => a - b); return s[s.length >> 1]; };
   function boxBlur(L, W, H, r) {                                // mean over a (2r+1)^2 window via an integral image
     const I = new Float64Array((W + 1) * (H + 1));
     for (let y = 0; y < H; y++) { let s = 0; for (let x = 0; x < W; x++) { s += L[y * W + x]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + s; } }
@@ -173,10 +189,11 @@
     return o;
   }
   const isBall = (b, cloth) => Math.hypot(b.a - cloth[0], b.b - cloth[1]) >= 20 || b.L < 90;   // not just a shadow
-  const isWhite = b => b.L > 160 && b.a > 95 && b.a < 112 && b.b > 132 && b.b < 150;
+  const isWhite = b => b.L > 175 && b.a > 92 && b.a < 120 && b.b > 128 && b.b < 155;
 
-  // img: the table crop already scaled to cal.W x cal.H. Returns the balls seen and how much of the table is covered.
-  function countFrame(cal, img) {
+  // img: the table crop already scaled to cal.W x cal.H. Returns the balls seen, big blobs (a cluster of
+  // touching balls inside the table, or the player/cue reaching in from the edge) and how much is covered.
+  function detectFrame(cal, img) {
     const { W, H, inside } = cal, n = W * H;
     const { L, A, B } = toLab(img.data, n);
     if (!cal.cloth) {                                           // cloth colour: median a, b inside the table
@@ -193,20 +210,39 @@
       const d = Math.hypot(A[i] - ca, B[i] - cb);
       m[i] = d > 22 || L[i] < Lbg[i] - 30 || L[i] > Lbg[i] + 40 ? 1 : 0;
     }
+    // what is on each colour spot: share of non-cloth pixels in a 7x7 patch (the spot's projection can be a
+    // few px off the ball's centre) and the mean colour of those pixels, i.e. of the ball sitting there
+    // Until each spot's true image position is known (see the end of this function) report nothing for it.
+    const spots = (cal.spots || []).map(([sx, sy], i) => {
+      const off = cal.spotOff ? cal.spotOff[i] : null;
+      if (!off) return null;
+      const x = Math.round(sx + off[0]), y = Math.round(sy + off[1]);
+      let k = 0, f = 0, sL = 0, sA = 0, sB = 0;
+      for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+        const j = (y + dy) * W + x + dx; if (j < 0 || j >= n) continue;
+        k++; if (m[j]) { f++; sL += L[j]; sA += A[j]; sB += B[j]; }
+      }
+      return k ? { fg: f / k, L: f ? sL / f : 0, a: f ? sA / f : 0, b: f ? sB / f : 0 } : null;
+    });
+    const fgRaw = m;
     m = morph(morph(m, W, H, 9), W, H, 1);                       // opening removes speckle
-    const lab = new Int32Array(n), stack = []; let id = 0, big = 0; const balls = [];
+    const lab = new Int32Array(n), stack = []; let id = 0, big = 0; const balls = [], blobs = [];
     for (let i = 0; i < n; i++) {
       if (!m[i] || lab[i]) continue;
       id++; lab[i] = id; stack.push(i);
-      let area = 0, sx = 0, sy = 0, sL = 0, sA = 0, sB = 0, x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+      let area = 0, sx = 0, sy = 0, sL = 0, sA = 0, sB = 0, x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1, edge = false;
       while (stack.length) {
         const j = stack.pop(), x = j % W, y = (j / W) | 0;
-        area++; sx += x; sy += y; sL += L[j]; sA += A[j]; sB += B[j];
+        area++; sx += x; sy += y; sL += L[j]; sA += A[j]; sB += B[j]; if (cal.rim[j]) edge = true;
         if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
         for (const k of [j - 1, j + 1, j - W, j + W]) if (k >= 0 && k < n && m[k] && !lab[k] && Math.abs((k % W) - x) <= 1) { lab[k] = id; stack.push(k); }
       }
       const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-      if (area > 450 || bw > 40 || bh > 40) { big += area; continue; }
+      if (area > 450 || bw > 40 || bh > 40) {
+        big += area;
+        blobs.push({ x0, y0, x1, y1, area, x: sx / area, y: sy / area, L: sL / area, a: sA / area, b: sB / area, edge });
+        continue;
+      }
       if (area < 35) continue;
       const cx = sx / area, cy = sy / area;
       if (Math.min(...cal.pockets.map(p => Math.hypot(p[0] - cx, p[1] - cy))) < 14) continue;   // pocket mouths
@@ -215,7 +251,39 @@
       b.white = isWhite(b);
       balls.push(b);
     }
-    return { balls, colours: balls.filter(b => !b.white).length, white: balls.filter(b => b.white).length, big };
+    // A ball's centre shows a few px from its spot: it sits above the cloth and the cloth corners are not exact,
+    // by different amounts at each end. Over the first frames find each colour near its spot: a single ball
+    // within 12 px, or else (inside a cluster, like the black or pink against the reds) the place nearby with
+    // the most pixels of that colour. Each spot takes the median of what was found.
+    if (cal.spots && !cal.spotOff) {
+      const votes = cal.spotVotes = cal.spotVotes || cal.spots.map(() => []);
+      cal.spots.forEach(([x, y], i) => {
+        let best = null, bd = 12;
+        for (const b of balls) { const d = Math.hypot(b.x - x, b.y - y); if (d < bd && !b.white) { bd = d; best = [b.x - x, b.y - y]; } }
+        if (!best) {
+          const like = SPOT_LIKE[SPOT_NAMES[i]]; let bs = 7;
+          for (let oy = -8; oy <= 8; oy++) for (let ox = -8; ox <= 8; ox++) {
+            let c = 0;
+            for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+              if (dx * dx + dy * dy > 9) continue;
+              const j = (Math.round(y) + oy + dy) * W + Math.round(x) + ox + dx;
+              if (j >= 0 && j < n && fgRaw[j] && like(L[j], A[j], B[j])) c++;
+            }
+            if (c > bs || (c === bs && best && ox * ox + oy * oy < best[0] ** 2 + best[1] ** 2)) { bs = c; best = [ox, oy]; }
+          }
+        }
+        if (best) votes[i].push(best);
+      });
+      cal.spotFrames = (cal.spotFrames || 0) + 1;
+      if (cal.spotFrames >= 10) cal.spotOff = votes.map(v => v.length >= 5 ? [median(v.map(o => o[0])), median(v.map(o => o[1]))] : [0, 0]);
+    }
+    spots.forEach((sp, i) => { if (!sp) return; const x = cal.spots[i][0] + cal.spotOff[i][0], y = cal.spots[i][1] + cal.spotOff[i][1];
+      sp.covered = blobs.some(o => o.edge && x >= o.x0 - 3 && x <= o.x1 + 3 && y >= o.y0 - 3 && y <= o.y1 + 3); });
+    return { balls, blobs, big, spots };
+  }
+  function countFrame(cal, img) {
+    const r = detectFrame(cal, img);
+    return { balls: r.balls, colours: r.balls.filter(b => !b.white).length, white: r.balls.filter(b => b.white).length, big: r.big };
   }
 
   // ---- colour clearance counting ---------------------------------------------------------
@@ -251,6 +319,6 @@
     }
   }
 
-  const api = { findTable, calibrate, countFrame, ClearanceCounter, homography, apply, toLab, NEAR_WIDTH };
+  const api = { findTable, calibrate, detectFrame, countFrame, isWhite, ClearanceCounter, homography, apply, toLab, NEAR_WIDTH, SPOT_NAMES, SPOT_MM };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.SnookerVision = api;
 })(typeof self !== "undefined" ? self : this);
