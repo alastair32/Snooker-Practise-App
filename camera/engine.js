@@ -478,25 +478,62 @@
     finish(t) { this._end(t, "time"); }
   }
 
-  // Free play: two players, the break passes on a miss; fouls are entered by hand.
+  // Free play: two players, the break passes on a miss; fouls are entered by hand. Any pocket counts (a
+  // match allows doubles). Reds and colours alternate while reds are left, then the colours go in order,
+  // which the tracker uses to tell a red from the pink and to name a colour it only saw leave its spot.
   class MatchScorer {
-    constructor(names = ["Player 1", "Player 2"]) {
+    constructor(names = ["Player 1", "Player 2"], onChange) {
       this.players = names.map(n => ({ name: n, score: 0, best: 0 })); this.turn = 0; this.break = 0; this.log = [];
-      this.expectRed = true;
+      this.reds = 15; this.lastRed = false; this.hist = []; this.onChange = onChange || (() => {});
+    }
+    attach(tracker) { this.tracker = tracker; tracker.drillMode = false; this._expect(); }
+    _expect() {
+      if (!this.tracker) return;
+      if (this.reds > 0) { this.tracker.due = null; this.tracker.prefer = this.lastRed ? "colour" : "red"; return; }
+      this.tracker.prefer = "colour";
+      this.tracker.due = this.lastRed ? null : (this.colourNext || "yellow");
+    }
+    _save() { this.hist.push(JSON.stringify([this.players, this.turn, this.break, this.reds, this.lastRed, this.colourNext, this.log])); if (this.hist.length > 50) this.hist.shift(); }
+    undo() {
+      const h = this.hist.pop(); if (!h) return;
+      [this.players, this.turn, this.break, this.reds, this.lastRed, this.colourNext, this.log] = JSON.parse(h); this._expect(); this.onChange();
     }
     feed(e) {
       if (e.type !== "shot") return;
-      const p = this.players[this.turn];
       if (e.inOff) { this.foul(4); return; }
       const pots = e.pots.filter(x => x.type !== "cue");
-      if (!pots.length) { this._endBreak(e.t); return; }
-      for (const x of pots) { this.break += x.value; p.score += x.value; }
-      p.best = Math.max(p.best, this.break);
+      if (!pots.length) { this._save(); this._endBreak(e.t); this._expect(); this.onChange(); return; }
+      this._save();
+      for (const x of pots) this._add(x.type);
       this.log.push({ t: e.t, player: this.turn, pots: pots.map(x => x.type), break: this.break });
+      this._expect(); this.onChange();
     }
-    _endBreak(t) { this.log.push({ t, player: this.turn, endBreak: this.break }); this.break = 0; this.turn = 1 - this.turn; }
-    foul(points) { this.players[1 - this.turn].score += points; this.log.push({ foul: points, player: this.turn }); this.break = 0; this.turn = 1 - this.turn; }
-    switchTurn() { this.break = 0; this.turn = 1 - this.turn; }
+    // a pot entered by hand (or corrected): value 1 = red, 2-7 = that colour
+    addPot(value) {
+      this._save();
+      const type = value === 1 ? "red" : ["yellow", "green", "brown", "blue", "pink", "black"][value - 2];
+      this._add(type); this.log.push({ player: this.turn, pots: [type], break: this.break, manual: true });
+      this._expect(); this.onChange();
+    }
+    _add(type) {
+      // the camera can't always tell what a colour was: once the reds are gone it is the one due
+      if (type !== "red" && this.reds === 0 && !this.lastRed) type = this.colourNext || "yellow";
+      const p = this.players[this.turn], v = VALUE[type] || 0;
+      this.break += v; p.score += v; p.best = Math.max(p.best, this.break);
+      if (type === "red") { this.reds = Math.max(0, this.reds - 1); this.lastRed = true; }
+      else {
+        if (this.reds === 0 && !this.lastRed) { const order = ["yellow", "green", "brown", "blue", "pink", "black"]; this.colourNext = order[order.indexOf(type) + 1] || null; }
+        this.lastRed = false;
+      }
+    }
+    _endBreak(t) { this.log.push({ t, player: this.turn, endBreak: this.break }); this.break = 0; this.turn = 1 - this.turn; this.lastRed = false; }
+    foul(points) {
+      this._save();
+      this.players[1 - this.turn].score += points; this.log.push({ foul: points, player: this.turn });
+      this.break = 0; this.turn = 1 - this.turn; this.lastRed = false; this._expect(); this.onChange();
+    }
+    switchTurn() { this._save(); this._endBreak(); this._expect(); this.onChange(); }
+    newFrame() { this._save(); this.players.forEach(p => { p.score = 0; }); this.break = 0; this.reds = 15; this.lastRed = false; this.colourNext = null; this.log = []; this._expect(); this.onChange(); }
   }
 
   // Ball counts a drill starts with, from its diagram.
