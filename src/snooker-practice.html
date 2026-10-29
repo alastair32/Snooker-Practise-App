@@ -196,10 +196,13 @@ body.camon.camsmall main { padding-block-end: calc(70px + env(safe-area-inset-bo
 .vidlist a { font-weight: 600; color: var(--accent); }
 /* Watching a session on another screen (laptop): feed and score card side by side when there's room */
 .watchgrid { display: grid; gap: 14px; grid-template-columns: 1fr; }
-.watchgrid[data-v="both"] { grid-template-columns: minmax(0, max-content) minmax(260px, 1fr); }
-.watchgrid[data-v="feed"] .wcard, .watchgrid[data-v="card"] .wfeed { display: none; }
-@media (max-width: 760px) { .watchgrid[data-v="both"] { grid-template-columns: 1fr; } }
-.wfeed { background: #000; border: 3px solid var(--accent); border-radius: var(--r); overflow: hidden; min-height: 200px; min-width: min(100%, 320px); justify-self: center; display: grid; place-items: center; padding: 8px; }
+.watchgrid[data-v="both"], .watchgrid[data-v="feed"] { grid-template-columns: minmax(0, max-content) minmax(260px, 1fr); }
+.watchgrid[data-v="feed"] #wcard, .watchgrid[data-v="card"] .wfeed { display: none; }
+@media (max-width: 760px) { .watchgrid[data-v="both"], .watchgrid[data-v="feed"] { grid-template-columns: 1fr; } }
+.wside { display: grid; gap: 14px; align-content: start; }
+.wctl .row button { flex: 1 1 auto; }
+.wctl .potpad button { min-height: 40px; }
+.wfeed { background: #000; border: 3px solid var(--accent); border-radius: var(--r); overflow: hidden; min-height: 200px; min-width: min(100%, 320px); justify-self: center; align-self: start; display: grid; place-items: center; padding: 8px; }
 /* Fit the whole feed on screen (a portrait phone feed would otherwise run below the fold) */
 .wfeed video { max-width: 100%; max-height: max(240px, calc(100vh - 300px)); width: auto; height: auto; display: block; border-radius: 6px; }
 .wfeed p { color: #ccc; padding: 24px; text-align: center; }
@@ -1234,7 +1237,7 @@ async function watchStart() {
     w.status = "Connection problem (" + (e.type || e.message) + "). Tap New code to try again."; renderWatch();
   });
   peer.on("connection", c => {
-    c.on("open", () => { if (watch !== w) return; w.conn = c; w.status = "Connected"; render(); });
+    c.on("open", () => { if (watch !== w) return; w.conn = c; w.stream = null; w.status = "Connected"; render(); });   // a reconnecting phone sends its camera afresh
     c.on("data", d => { if (watch !== w) return; w.state = d; renderWatch(); });
     c.on("close", () => { if (watch !== w) return; w.status = "The phone disconnected. It can reconnect with the same code."; w.state = null; renderWatch(); });
   });
@@ -1269,13 +1272,42 @@ function viewWatch() {
     ${w.conn ? "" : `<article class="card"><p>On the phone, open the session or match and tap <b>Show on another screen</b>, then enter this code:</p>
       <div class="paircode">${w.peer && w.peer.open ? w.code : "······"}</div><p class="small muted" id="wstatus">${esc(w.status)}</p><div class="row"><button class="ghost" data-act="w-new">New code</button></div></article>`}
     ${w.conn ? `<div class="row between"><div class="seg" role="group" aria-label="Show">${seg("both", "Feed and score card")}${seg("feed", "Feed")}${seg("card", "Score card")}</div><span class="small muted" id="wstatus">${esc(w.status)}</span></div>` : ""}
-    <div class="watchgrid" data-v="${w.view}"><div class="wfeed"><video id="wvideo" playsinline muted autoplay${w.stream ? "" : " hidden"}></video>${w.stream ? "" : `<p id="wnofeed">${w.conn ? "No camera feed. Turn on Track with camera on the phone to send it." : "The live feed appears here."}</p>`}</div>
-    <div class="wcard" id="wcard">${watchCardHTML()}</div></div>`;
+    <div class="watchgrid" data-v="${w.view}"><div class="wfeed"><video id="wvideo" playsinline muted autoplay${w.stream ? "" : " hidden"}></video><p id="wnofeed"${w.stream ? " hidden" : ""}>${w.conn ? "No camera feed. Turn on Track with camera to send it." : "The live feed appears here."}</p></div>
+    <div class="wside"><div class="wcard" id="wcard">${watchCardHTML()}</div><div id="wctl">${watchCtlHTML()}</div></div></div>`;
 }
+// Controls for the phone, for when it's out of reach on its stand. Each button is sent to the phone,
+// which presses its own button of the same name, so it behaves exactly as if tapped there.
+const REMOTE_ACTS = new Set(["run-start", "run-skip", "run-end", "run-pause", "run-stop", "run-finish", "undo-score", "cam-toggle", "cam-find",
+  "m-pot", "m-foul", "m-switch", "m-undo", "m-new", "m-cam"]);
+const ctlKey = st => !st ? "" : JSON.stringify([st.kind, st.phase, st.paused, st.last, st.cam, st.camOn, st.metric, st.armed]);
+function watchCtlHTML() {
+  const st = watch && watch.state; if (!st || !watch.conn) return "";
+  const btn = (act, t, cls = "", i) => `<button class="${cls}" data-act="w-send" data-v="${act}"${i != null ? ` data-i="${i}"` : ""}>${t}</button>`;
+  const msg = st.msg ? `<p class="small" style="color:var(--warn)">${esc(st.msg)}</p>` : "";
+  if (st.kind === "match") {
+    const pot = [1, 2, 3, 4, 5, 6, 7].map(v => `<button data-act="w-send" data-v="m-pot" data-i="${v}" style="background:var(--ball-${["red", "yellow", "green", "brown", "blue", "pink", "black"][v - 1]})">${v}</button>`).join("");
+    return `<article class="card wctl stack"><p class="eyebrow">Controls</p>
+      <div class="row">${btn("m-switch", "Miss / next player", "primary")}${btn("m-undo", "Undo", "ghost")}${btn("m-new", st.armed === "m-new" ? "Tap again for a new frame" : "New frame", st.armed === "m-new" ? "ghost armed" : "ghost")}</div>
+      <p class="small muted">Add a pot</p><div class="potpad">${pot}</div>
+      <p class="small muted">Foul (points to the other player)</p><div class="row">${[4, 5, 6, 7].map(v => btn("m-foul", v, "", v)).join("")}</div>
+      ${st.camOk ? `<div class="row">${btn("m-cam", st.camOn ? "Turn camera off" : "Track with camera", "ghost")}${st.camOn ? btn("cam-find", "Find table again", "ghost") : ""}</div>` : ""}${msg}</article>`;
+  }
+  if (st.phase === "setup") return `<article class="card wctl stack"><p class="eyebrow">Controls</p>
+      <div class="row">${btn("run-start", "Start drill", "primary")}${btn("run-skip", "Skip this drill", "ghost")}${btn("run-end", "Finish session", "ghost")}</div>
+      ${st.camOk ? `<div class="row">${btn("cam-toggle", st.camOn ? "Turn camera off" : "Track with camera", "ghost")}${st.camOn ? btn("cam-find", "Find table again", "ghost") : ""}</div>` : ""}${msg}</article>`;
+  if (st.phase === "running") return `<article class="card wctl stack"><p class="eyebrow">Controls</p>
+      <form class="row" data-form="w-score"><input id="w-score" inputmode="numeric" autocomplete="off" placeholder="${esc(st.hint || "Score")}" style="max-width:140px"><button class="primary" type="submit">Add score</button>${btn("undo-score", "Undo last", "ghost")}</form>
+      <div class="row">${btn("run-pause", st.paused ? "Resume" : "Pause")}${btn("run-stop", st.last ? "Finish session" : "Next drill", "primary")}${st.last ? "" : btn("run-finish", "End session now", "ghost")}</div>
+      ${st.camOn ? `<div class="row">${btn("cam-find", "Find table again", "ghost")}</div>` : ""}${msg}</article>`;
+  return `<article class="card wctl"><p class="small muted">Save or discard the session on the phone.</p></article>`;
+}
+function watchSend(m) { if (watch && watch.conn && watch.conn.open) try { watch.conn.send(m); } catch (e) {} else toast("The phone isn't connected."); }
 // Update only the parts that change, so the video keeps playing.
 function renderWatch() {
   if (route !== "watch" || !watch) return;
   const c = $("#wcard"); if (c) c.innerHTML = watchCardHTML();
+  const k = ctlKey(watch.state) + "|" + (watch.state && watch.state.msg || ""), t = $("#wctl");
+  if (t && t.dataset.k !== k) { t.dataset.k = k; t.innerHTML = watchCtlHTML(); }
   const s = $("#wstatus"); if (s) s.textContent = watch.status;
   const v = $("#wvideo"), nf = $("#wnofeed");
   if (v) { if (watch.stream && v.srcObject !== watch.stream) { v.srcObject = watch.stream; v.play().catch(() => {}); } v.hidden = !watch.stream; }
@@ -1284,7 +1316,8 @@ function renderWatch() {
 
 // -- phone --
 function liveState() {
-  if (route === "match" && match) return Object.assign({ kind: "match" }, matchState());
+  const extra = { camOk: CAM_OK, camOn: !!cam.stream, armed, msg: link.msg || "" };
+  if (route === "match" && match) return Object.assign({ kind: "match" }, matchState(), extra);
   if (route !== "run" || !draft) return null;
   const r = draft, d = curDrill(r), running = r.phase === "running", e = running ? curEntry(r) : null, s = e ? entryStats(e) : null;
   const it = r.items[r.idx], total = it ? (+it.minutes || 0) * 60 : 0, rem = total - runElapsed(r);
@@ -1292,7 +1325,8 @@ function liveState() {
   return { kind: "run", plan: r.planName, idx: r.idx + 1, of: r.items.length, phase: r.phase, drill: d && r.phase !== "summary" ? d.name : "",
     kind2: d ? metricLabel(d) : "", paused: !!r.paused,
     timer: running ? (rem >= 0 ? mmss(Math.ceil(rem)) : "+" + mmss(-rem)) : "", over: running && rem < 0,
-    scores: e ? e.scores : [], n: s ? s.n : 0, avg: s ? (e.metric === "outof" ? s.avgV + "%" : s.avg.toFixed(1)) : null, best: s ? s.best : null, next: nx ? nx.name : "" };
+    scores: e ? e.scores : [], n: s ? s.n : 0, avg: s ? (e.metric === "outof" ? s.avgV + "%" : s.avg.toFixed(1)) : null, best: s ? s.best : null, next: nx ? nx.name : "",
+    last: r.idx === r.items.length - 1, metric: e ? e.metric : "", hint: e && e.metric === "outof" ? "Pots out of " + e.per : "Score", ...extra };
 }
 async function linkConnect(code) {
   code = String(code || "").replace(/\D/g, "");
@@ -1304,9 +1338,24 @@ async function linkConnect(code) {
   peer.on("open", () => {
     const c = peer.connect(PEER_PREFIX + code, { reliable: true }); link.conn = c;
     c.on("open", () => { link.status = "Showing on the other screen"; link.last = ""; linkSend(); linkVideo(); renderLink(); toast("Connected to the other screen"); });
+    c.on("data", linkRemote);
     c.on("close", () => { if (link.conn === c) { link.status = "Disconnected"; link.conn = null; renderLink(); } });
   });
   clearInterval(link.timer); link.timer = setInterval(() => { linkSend(); linkVideo(); }, 500);
+}
+// A button pressed on the laptop: press the same button here, or add the typed score.
+function linkRemote(d) {
+  if (!d || typeof d !== "object") return;
+  const note = m => { link.msg = m; clearTimeout(link.msgT); link.msgT = setTimeout(() => { link.msg = ""; linkSend(); }, 4000); };
+  if (d.score != null) {
+    const r = draft;
+    if (route !== "run" || !r || r.phase !== "running") note("No drill is running.");
+    else { const res = validate(String(d.score), scoringOf(r)); if (res.err) note(res.err); else { link.msg = ""; addScore(String(d.score)); } }
+  } else if (REMOTE_ACTS.has(d.act)) {
+    const sel = `[data-act="${d.act}"]` + (d.i != null ? `[data-i="${+d.i}"]` : ""), b = document.querySelector(sel);
+    if (b) { link.msg = ""; b.click(); } else note("That button isn't on the phone's screen right now.");
+  }
+  linkSend();
 }
 function linkSend() {
   if (!link.conn || !link.conn.open) return;
@@ -1353,6 +1402,11 @@ function arm(key) {
 function setPath(obj, path, val) { const ks = path.split("."); let o = obj; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = val; }
 function startRun(planId, planName, items) { cam.best = {}; cam.session = null; go("run", newRun(planId, planName, items)); }
 
+document.addEventListener("submit", ev => {
+  if (ev.target.dataset.form !== "w-score") return;
+  ev.preventDefault(); const i = $("#w-score"), v = i.value.trim(); if (!v) return;
+  watchSend({ score: v }); i.value = ""; i.focus();
+});
 document.addEventListener("click", ev => {
   const dl = ev.target.closest("a[download]");
   if (dl && NATIVE && blobs[dl.href]) { ev.preventDefault(); saveBlob(blobs[dl.href], dl.getAttribute("download")); return; }
@@ -1442,6 +1496,7 @@ document.addEventListener("click", ev => {
     case "watch": go("watch"); break;
     case "w-leave": watchStop(); go("home"); break;
     case "w-new": watchStart(); break;
+    case "w-send": watchSend(b.dataset.i != null ? { act: b.dataset.v, i: +b.dataset.i } : { act: b.dataset.v }); break;
     case "w-view": watch.view = b.dataset.v; LS.set("snk.wview", watch.view); $(".watchgrid").dataset.v = watch.view; document.querySelectorAll('[data-act="w-view"]').forEach(x => x.setAttribute("aria-pressed", x.dataset.v === watch.view)); break;
     case "link-open": link.open = true; render(); { const i = $("#link-code"); if (i) i.focus(); } break;
     case "link-close": link.open = false; linkStop(); render(); break;
