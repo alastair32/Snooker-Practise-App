@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1d6b44">
+<title>Camera Tracking</title>
+<link rel="icon" href="../icons/icon-192.png">
+<style>
+:root {
+  --bg: #eef2ee; --surface: #ffffff; --surface-2: #f5f8f5; --fg: #13201a; --muted: #5a6b61; --line: #d6dfd8;
+  --accent: #1d6b44; --accent-ink: #ffffff; --accent-soft: #dcebe2;
+  --good: #1d7a43; --warn: #a86a00; --bad: #b3261e;
+  --f-display: "Bricolage Grotesque", "Avenir Next Condensed", system-ui, sans-serif;
+  --f-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 12px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0b130f; --surface: #131e18; --surface-2: #18251e; --fg: #e4ece6; --muted: #92a399; --line: #26362d;
+  --accent: #3fae76; --accent-ink: #06130c; --accent-soft: #1b3326;
+  --good: #4cc483; --warn: #e3a63b; --bad: #f2786f; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0b130f; --surface: #131e18; --surface-2: #18251e; --fg: #e4ece6; --muted: #92a399; --line: #26362d;
+  --accent: #3fae76; --accent-ink: #06130c; --accent-soft: #1b3326;
+  --good: #4cc483; --warn: #e3a63b; --bad: #f2786f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.5;
+  padding: env(safe-area-inset-top, 0) 16px env(safe-area-inset-bottom, 0); }
+main { max-width: 720px; margin: 0 auto; padding: 16px 0 40px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+h1 { font-family: var(--f-display); font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+a { color: var(--accent); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; margin-bottom: 12px; }
+.muted { color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button, .btn { font: inherit; font-weight: 600; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
+  padding: 10px 14px; min-height: 44px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+input[type=file] { display: none; }
+.stage { position: relative; background: #000; border-radius: var(--r); overflow: hidden; touch-action: none; }
+.stage video { display: block; width: 100%; height: auto; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.stage .hint { position: absolute; left: 0; right: 0; top: 40%; text-align: center; color: #fff; opacity: .85; padding: 0 16px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; text-align: center; }
+.stat b { display: block; font-family: var(--f-num); font-variant-numeric: tabular-nums; font-size: 34px; line-height: 1.1; }
+.stat span { font-size: 13px; color: var(--muted); }
+.status { font-size: 14px; color: var(--muted); min-height: 21px; }
+.status.warn { color: var(--warn); }
+ol { margin: 6px 0 0; padding-left: 22px; font-family: var(--f-num); font-size: 14px; }
+progress { width: 100%; height: 8px; accent-color: var(--accent); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; min-height: 40px; }
+.seg button[aria-pressed=true] { background: var(--accent-soft); color: var(--fg); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Camera tracking <span class="muted" style="font-size:14px;font-weight:500">test</span></h1>
+    <a href="../">Back to app</a>
+  </header>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div class="seg" role="group" aria-label="Drill">
+        <button aria-pressed="true" data-drill="clearance">Colour clearance</button>
+      </div>
+      <div class="row">
+        <button id="btnCamera" class="primary">Use camera</button>
+        <label class="btn" for="file">Analyse a video</label>
+        <input id="file" type="file" accept="video/*">
+      </div>
+    </div>
+    <p class="muted" style="margin:10px 0 0;font-size:14px">Prop the phone up at the black end, higher is better, with the whole table in view. The app finds the table, then counts the colours left and each clearance. Nothing leaves your phone.</p>
+  </section>
+
+  <section class="stage" id="stage" hidden>
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div class="hint" id="hint" hidden></div>
+  </section>
+
+  <section class="card" id="setup" hidden style="margin-top:12px">
+    <div class="status" id="setupStatus">Looking for the table…</div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnFind">Find table again</button>
+      <button id="btnStart" class="primary" disabled>Start counting</button>
+    </div>
+    <p class="muted" style="margin:8px 0 0;font-size:13px">Drag the corner dots onto the corners of the green cloth if they're off.</p>
+  </section>
+
+  <section id="live" hidden style="margin-top:12px">
+    <div class="stats">
+      <div class="stat"><b id="sColours">–</b><span>colours left</span></div>
+      <div class="stat"><b id="sClear">0</b><span>clearances</span></div>
+      <div class="stat"><b id="sTime">0:00</b><span id="sTimeLabel">elapsed</span></div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="status" id="liveStatus"></div>
+      <progress id="prog" max="1" value="0" hidden></progress>
+      <ol id="list"></ol>
+      <div class="row" style="margin-top:10px">
+        <button id="btnStop">Finish</button>
+        <button id="btnCopy" hidden>Copy result</button>
+        <label class="row" style="gap:6px;font-size:14px"><input type="checkbox" id="chkDots" checked> Show detected balls</label>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="vision.js"></script>
+<script>
+"use strict";
+const V = window.SnookerVision;
+const $ = id => document.getElementById(id);
+const video = $("video"), overlay = $("overlay"), octx = overlay.getContext("2d");
+const work = document.createElement("canvas"), wctx = work.getContext("2d", { willReadFrequently: true });
+const FPS = 6;                                   // frames analysed per second
+let quad = null, cal = null, counter = null, running = false, source = null, lastBalls = [], wakeLock = null, t0 = 0, timer = null;
+
+const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+function grab(sx = 0, sy = 0, sw = video.videoWidth, sh = video.videoHeight, dw = sw, dh = sh) {
+  work.width = dw; work.height = dh;
+  wctx.drawImage(video, sx, sy, sw, sh, 0, 0, dw, dh);
+  return wctx.getImageData(0, 0, dw, dh);
+}
+
+// ---- overlay: table outline, draggable corners, detected balls ----
+function sizeOverlay() { overlay.width = video.videoWidth; overlay.height = video.videoHeight; }
+function draw() {
+  if (!video.videoWidth) return;
+  if (overlay.width !== video.videoWidth) sizeOverlay();
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!quad) return;
+  const u = video.videoWidth / 540;
+  octx.lineWidth = 2.5 * u; octx.strokeStyle = "#ffd54a";
+  octx.beginPath(); quad.forEach((p, i) => i ? octx.lineTo(...p) : octx.moveTo(...p)); octx.closePath(); octx.stroke();
+  if (!running) quad.forEach(p => { octx.beginPath(); octx.arc(p[0], p[1], 9 * u, 0, 7); octx.fillStyle = "rgba(255,213,74,.85)"; octx.fill(); });
+  if (running && $("chkDots").checked && cal) {
+    for (const b of lastBalls) {
+      const x = cal.crop.sx + b.x / cal.scale, y = cal.crop.sy + b.y / cal.scale;
+      octx.beginPath(); octx.arc(x, y, 7 * u, 0, 7); octx.lineWidth = 2 * u;
+      octx.strokeStyle = b.white ? "#ffffff" : "#ff4fb0"; octx.stroke();
+    }
+  }
+}
+let drag = -1;
+function toVideo(e) { const r = overlay.getBoundingClientRect(); return [(e.clientX - r.left) * video.videoWidth / r.width, (e.clientY - r.top) * video.videoHeight / r.height]; }
+overlay.addEventListener("pointerdown", e => {
+  if (running || !quad) return;
+  const p = toVideo(e), u = video.videoWidth / 540;
+  drag = quad.findIndex(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < 30 * u);
+  if (drag >= 0) overlay.setPointerCapture(e.pointerId);
+});
+overlay.addEventListener("pointermove", e => { if (drag >= 0) { quad[drag] = toVideo(e); draw(); } });
+overlay.addEventListener("pointerup", () => { drag = -1; });
+
+// ---- sources ----
+$("btnCamera").onclick = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    reset(); source = "camera"; video.srcObject = stream; video.removeAttribute("src");
+    await video.play(); showSetup();
+  } catch (err) { alert("Couldn't open the camera: " + err.message); }
+};
+$("file").onchange = async () => {
+  const f = $("file").files[0]; if (!f) return;
+  reset(); source = "file"; video.srcObject = null; video.src = URL.createObjectURL(f);
+  await new Promise(r => video.addEventListener("loadeddata", r, { once: true }));
+  video.currentTime = Math.min(10, video.duration / 3);         // a frame a little way in, usually with the table clear
+  await new Promise(r => video.addEventListener("seeked", r, { once: true }));
+  showSetup();
+};
+function reset() {
+  running = false; quad = null; cal = null; lastBalls = [];
+  if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+  $("live").hidden = true; $("list").innerHTML = ""; $("btnCopy").hidden = true;
+}
+function showSetup() {
+  $("stage").hidden = false; $("setup").hidden = false; sizeOverlay(); findTable();
+  if (source === "camera") (function loop() { if (!running && source === "camera") { draw(); requestAnimationFrame(loop); } })();
+}
+function findTable() {
+  quad = V.findTable(grab());
+  $("setupStatus").textContent = quad ? "Table found. Check the corners, then start." : "Couldn't find the table. Make sure the green cloth is in view, or drag the corners into place.";
+  if (!quad) { const w = video.videoWidth, h = video.videoHeight; quad = [[w * .3, h * .45], [w * .7, h * .45], [w * .9, h * .65], [w * .1, h * .65]]; }
+  $("btnStart").disabled = false; draw();
+}
+$("btnFind").onclick = findTable;
+
+// ---- counting ----
+function analyse(t) {
+  const { sx, sy, sw, sh } = cal.crop;
+  const r = V.countFrame(cal, grab(sx, sy, sw, sh, cal.W, cal.H));
+  lastBalls = r.balls; counter.add(t, r);
+  const covered = r.big > counter.maxBig;
+  $("liveStatus").textContent = covered ? "Player over the table…" : "";
+  $("sColours").textContent = counter.colours ?? "–";
+  $("sClear").textContent = counter.clearances.length;
+  $("list").innerHTML = counter.clearances.map((c, i) => `<li>Clearance ${i + 1} at ${fmt(c.at)}${c.took !== null ? ` · took ${fmt(c.took)}` : ""}</li>`).join("");
+  draw();
+}
+$("btnStart").onclick = async () => {
+  cal = V.calibrate(quad); counter = new V.ClearanceCounter(); running = true;
+  $("setup").hidden = true; $("live").hidden = false; $("btnStop").hidden = false;
+  if (source === "camera") {
+    try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {}
+    t0 = performance.now(); let next = 0;
+    timer = setInterval(() => $("sTime").textContent = fmt((performance.now() - t0) / 1000), 500);
+    (function loop(now) {
+      if (!running) return;
+      if (now >= next) { next = now + 1000 / FPS; analyse((now - t0) / 1000); }
+      requestAnimationFrame(loop);
+    })(performance.now());
+  } else {
+    // A file is stepped through frame by frame (faster than real time where the phone allows).
+    $("prog").hidden = false; $("sTimeLabel").textContent = "video time";
+    for (let t = 0; running && t < video.duration; t += 1 / FPS) {
+      video.currentTime = t;
+      await new Promise(r => video.addEventListener("seeked", r, { once: true }));
+      analyse(t); $("prog").value = t / video.duration; $("sTime").textContent = fmt(t);
+    }
+    finish();
+  }
+};
+function finish() {
+  if (!counter) return;
+  running = false; counter.finish(); clearInterval(timer); wakeLock?.release?.(); wakeLock = null;
+  $("sClear").textContent = counter.clearances.length; $("prog").hidden = true;
+  $("liveStatus").textContent = `Finished: ${counter.clearances.length} clearance${counter.clearances.length === 1 ? "" : "s"}.`;
+  $("btnStop").hidden = true; $("btnCopy").hidden = false; draw();
+}
+$("btnStop").onclick = finish;
+$("btnCopy").onclick = () => {
+  const txt = `Colour clearance: ${counter.clearances.length} clearances` + counter.clearances.map((c, i) => `\n${i + 1}. ${fmt(c.at)}${c.took !== null ? ` (took ${fmt(c.took)})` : ""}`).join("");
+  navigator.clipboard?.writeText(txt); $("btnCopy").textContent = "Copied";
+};
+$("chkDots").onchange = draw;
+document.addEventListener("visibilitychange", async () => { if (running && source === "camera" && document.visibilityState === "visible") try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {} });
+</script>
+</body>
+</html>
