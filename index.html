@@ -207,11 +207,12 @@ body.camon.camsmall main { padding-block-end: calc(70px + env(safe-area-inset-bo
 .vidlist a { font-weight: 600; color: var(--accent); }
 /* Watching a session on another screen (laptop): feed and score card side by side when there's room */
 .watchgrid { display: grid; gap: 14px; grid-template-columns: 1fr; }
-.watchgrid[data-v="both"] { grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); }
+.watchgrid[data-v="both"] { grid-template-columns: minmax(0, max-content) minmax(260px, 1fr); }
 .watchgrid[data-v="feed"] .wcard, .watchgrid[data-v="card"] .wfeed { display: none; }
 @media (max-width: 760px) { .watchgrid[data-v="both"] { grid-template-columns: 1fr; } }
-.wfeed { background: #000; border-radius: var(--r); overflow: hidden; min-height: 200px; display: grid; place-items: center; }
-.wfeed video { width: 100%; height: auto; display: block; }
+.wfeed { background: #000; border: 3px solid var(--accent); border-radius: var(--r); overflow: hidden; min-height: 200px; min-width: min(100%, 320px); justify-self: center; display: grid; place-items: center; padding: 8px; }
+/* Fit the whole feed on screen (a portrait phone feed would otherwise run below the fold) */
+.wfeed video { max-width: 100%; max-height: max(240px, calc(100vh - 300px)); width: auto; height: auto; display: block; border-radius: 6px; }
 .wfeed p { color: #ccc; padding: 24px; text-align: center; }
 .paircode { font-family: var(--f-num); font-size: 44px; font-weight: 700; letter-spacing: .12em; }
 .wcard .bigtimer { font-family: var(--f-num); font-size: 48px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
