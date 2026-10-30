@@ -310,8 +310,9 @@
         let best = null, bd = 12;
         for (const b of balls) { const d = Math.hypot(b.x - x, b.y - y); if (d < bd && !b.white) { bd = d; best = [b.x - x, b.y - y]; } }
         if (!best) {
+          // (from a low camera the far end can be ~20 px out sideways)
           const like = SPOT_LIKE[SPOT_NAMES[i]]; let bs = 7;
-          for (let oy = -8; oy <= 8; oy++) for (let ox = -8; ox <= 8; ox++) {
+          for (let oy = -8; oy <= 8; oy++) for (let ox = -20; ox <= 20; ox++) {
             let c = 0;
             for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
               if (dx * dx + dy * dy > 9) continue;
