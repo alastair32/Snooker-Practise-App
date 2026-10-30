@@ -471,7 +471,13 @@
       for (const b of reds) W.push({ id: this.nid++, type: "red", x: b.x, y: b.y, lab: b.lab });
       if (reds.length) this.proto.red = reds.map(r => r.lab).reduce((a, l) => a.map((v, j) => v + l[j] / reds.length), [0, 0, 0]);
       // reds the drill expects but that can't be seen one by one: inside clusters (e.g. a line of touching reds)
-      const missingReds = this.expect && this.expect.red ? Math.max(0, this.expect.red - reds.length) : 0;
+      let missingReds = this.expect && this.expect.red ? Math.max(0, this.expect.red - reds.length) : 0;
+      // the camera picks out single balls in a cluster by their shine spots (vision.js splitCluster): take the
+      // red-looking ones where they are, away from the colours' spots
+      const inLine = clusters.flatMap(c => c.parts || []).filter(p => labDist([p.L, p.a, p.b], this.proto.red) < 45 &&
+        !want.some(c => dist(p, this.spots[c]) < 6) && !W.some(w => dist(p, w) < 6));
+      for (const p of inLine.slice(0, missingReds)) W.push({ id: this.nid++, type: "red", x: p.x, y: p.y, lab: [p.L, p.a, p.b], hidden: true });
+      missingReds = Math.max(0, missingReds - inLine.length);
       const redClusters = clusters.filter(c => labDist([c.L, c.a, c.b], this.proto.red) < 50 || c.a > 130);
       for (let k = 0; k < missingReds && redClusters.length; k++) {
         const c = redClusters[k % redClusters.length], f = (k + 0.5) / missingReds;

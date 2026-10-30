@@ -41,7 +41,8 @@ ff.stdout.on("data", d => {
     const r = V.detectFrame(cal, { data: buf.subarray(0, size), width: cal.W, height: cal.H });
     ws.write(JSON.stringify({ t: r1(k / fps),
       balls: r.balls.map(b => [r1(b.x), r1(b.y), b.area, Math.round(b.L), Math.round(b.a), Math.round(b.b), b.white ? 1 : 0]),
-      blobs: r.blobs.map(b => [b.x0, b.y0, b.x1, b.y1, b.area, b.edge ? 1 : 0, Math.round(b.L), Math.round(b.a), Math.round(b.b)]),
+      blobs: r.blobs.map(b => [b.x0, b.y0, b.x1, b.y1, b.area, b.edge ? 1 : 0, Math.round(b.L), Math.round(b.a), Math.round(b.b),
+        ...(b.parts ? [b.parts.map(p => [r1(p.x), r1(p.y), Math.round(p.L), Math.round(p.a), Math.round(p.b)])] : [])]),
       spots: r.spots.map(s => s && [r1(s.fg), Math.round(s.L), Math.round(s.a), Math.round(s.b), s.covered ? 1 : 0]) }) + "\n");
     k++; buf = buf.subarray(size);
   }
