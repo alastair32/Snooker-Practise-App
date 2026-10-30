@@ -98,15 +98,18 @@
 
   // ---- finding the table -----------------------------------------------------------------
   // Returns the 4 cloth corners [far-left, far-right, near-right, near-left] in frame pixels, or null.
-  function findTable(img) {
+  // minV: how bright the cloth must be. If nothing that bright is found (a dim room, or the camera exposing
+  // for the lamps in view), try again relative to the brightest green there is: a quarter of it.
+  function findTable(img, minV = 120) {
     const { data, width: W, height: H } = img;
     const step = Math.max(1, Math.round(W / 540));            // work at about 540 px wide
     const w = Math.floor(W / step), h = Math.floor(H / step);
-    const m = new Uint8Array(w * h);
+    const m = new Uint8Array(w * h); let top = 0;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const p = ((y * step) * W + x * step) * 4;
       const [hh, s, v] = hsv(data[p], data[p + 1], data[p + 2]);
-      m[y * w + x] = hh >= 60 && hh <= 90 && s >= 170 && v >= 120 ? 1 : 0;
+      m[y * w + x] = hh >= 60 && hh <= 90 && s >= 170 && v >= minV ? 1 : 0;
+      if (minV === 120 && hh >= 60 && hh <= 90 && s >= 170) top = Math.max(top, v);
     }
     // largest green component
     const lab = new Int32Array(w * h); let best = 0, bestId = 0, id = 0; const stack = [];
@@ -123,7 +126,7 @@
       }
       if (n > best) { best = n; bestId = id; }
     }
-    if (best < w * h * 0.02) return null;
+    if (best < w * h * 0.02) return minV === 120 && top > 40 && top < 160 ? findTable(img, Math.max(20, 0.25 * top)) : null;
     const pts = [];
     for (let y = 0; y < h; y++) {                              // left- and right-most pixel of each row
       let a = -1, b = -1;
