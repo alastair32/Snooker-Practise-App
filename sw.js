@@ -1,5 +1,5 @@
 // Offline support: the app itself is fetched network-first (so updates arrive), fonts cache-first.
-const CACHE = "practice-log-v9";
+const CACHE = "practice-log-v10";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "camera/vision.js", "camera/engine.js", "camera/peerjs.min.js"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener("activate", e => {

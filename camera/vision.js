@@ -189,7 +189,8 @@
     return o;
   }
   const isBall = (b, cloth) => Math.hypot(b.a - cloth[0], b.b - cloth[1]) >= 20 || b.L < 90;   // not just a shadow
-  const isWhite = b => b.L > 175 && b.a > 92 && b.a < 120 && b.b > 128 && b.b < 155;
+  // minL: how bright the cue ball must be (lower when the app has turned the camera's exposure down)
+  const isWhite = (b, minL = 175) => b.L > minL && b.a > 92 && b.a < 120 && b.b > 128 && b.b < 155;
 
   // img: the table crop already scaled to cal.W x cal.H. Returns the balls seen, big blobs (a cluster of
   // touching balls inside the table, or the player/cue reaching in from the edge) and how much is covered.
@@ -248,7 +249,7 @@
       if (Math.min(...cal.pockets.map(p => Math.hypot(p[0] - cx, p[1] - cy))) < 14) continue;   // pocket mouths
       const b = { x: cx, y: cy, area, L: sL / area, a: sA / area, b: sB / area };
       if (!isBall(b, cal.cloth)) continue;
-      b.white = isWhite(b);
+      b.white = isWhite(b, cal.whiteMinL);
       balls.push(b);
     }
     // A ball's centre shows a few px from its spot: it sits above the cloth and the cloth corners are not exact,
