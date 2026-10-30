@@ -285,9 +285,11 @@
       // (unless other colours came back too: that is the table being set up again after the last colour went down)
       if (this.due && spotOn.length === 1) { const k = spotOff.indexOf(spotOn[0]); if (k >= 0) spotOff.splice(k, 1); }
       // a colour put back on its spot means hands on the table: a flicker of a few frames is the hand, not a ball
+      // (several colours put back is the table being set up again: only a long run then is a stroke)
       if (spotOn.length) {
-        for (let i = rolled.length - 1; i >= 0; i--) if (rolled[i].path.length < 6) rolled.splice(i, 1);
-        for (let i = potTracks.length - 1; i >= 0; i--) if (potTracks[i].tr.path.length < 6) potTracks.splice(i, 1);
+        const short = spotOn.length > 1 ? 15 : 6;
+        for (let i = rolled.length - 1; i >= 0; i--) if (rolled[i].path.length < short) rolled.splice(i, 1);
+        for (let i = potTracks.length - 1; i >= 0; i--) if (potTracks[i].tr.path.length < short) potTracks.splice(i, 1);
       }
       const objMoved = rolled.some(tr => tr.white < tr.path.length / 2) || spotOff.length > 0;
       // a coloured ball seen running a long way in the open is a shot, even if it was first picked up away from where it rested
@@ -319,7 +321,10 @@
         // shot went there rather than into a pocket. (A potted ball's track ends while it is still moving.)
         const restEnds = this.tracks.filter(tr => { const P = tr.path, n = P.length; if (n < 6 || tr.last < since || tr.white >= n / 2 || potTracks.some(p => p.tr === tr)) return false;
           const seg = P.filter(q => q[0] >= since); if (seg.length < 6) return false;
-          const e = P[n - 1]; return Math.hypot(e[1] - seg[0][1], e[2] - seg[0][2]) >= 40 && P.slice(n - 3).every(q => Math.hypot(q[1] - e[1], q[2] - e[2]) < 4) &&
+          // stopped, or (picked up by hand while still creeping) slow and nowhere near a pocket
+          const e = P[n - 1], still = r => P.slice(n - 3).every(q => Math.hypot(q[1] - e[1], q[2] - e[2]) < r);
+          const farFromPockets = this.cal.pockets.every(p => Math.hypot(p[0] - e[1], p[1] - e[2]) > 35);
+          return Math.hypot(e[1] - seg[0][1], e[2] - seg[0][2]) >= 40 && (still(4) || (farFromPockets && still(9))) &&
             !D.some(d => Math.hypot(d.x - e[1], d.y - e[2]) < 10); });
         const cameToRest = () => { const tr = restEnds.shift(); return !!tr; };
         for (const c of struck ? spotOff : []) {
@@ -419,11 +424,12 @@
         const spot = COLOURS.find(c => dist(b, this.spots[c]) < 12);
         const potted = this.potted.slice();
         if (spot && potted.includes(spot)) type = spot;
-        else if (spot && potted.length) {
+        else if (spot) {
           // own spot was covered: it is a potted colour whose own spot is occupied, placed on the highest free spot
+          // (and looks more like that colour than this spot's own); otherwise a ball put on a spot is that spot's colour
           const covered = potted.filter(c => this.world.some(w => dist(w, this.spots[c]) < 10));
-          const cands = covered.length ? covered : potted;
-          type = cands.sort((x, y) => labDist(b.lab, this.proto[x]) - labDist(b.lab, this.proto[y]))[0];
+          const best = covered.sort((x, y) => labDist(b.lab, this.proto[x]) - labDist(b.lab, this.proto[y]))[0];
+          type = best && labDist(b.lab, this.proto[best]) < labDist(b.lab, this.proto[spot]) ? best : spot;
         } else if (potted.length && !spot) {
           // no free spot: placed as near its own spot as possible towards the top cushion
           const near = potted.filter(c => dist(b, this.spots[c]) < 40);
@@ -432,6 +438,8 @@
         if (!type) type = this._classify(b);
       }
       const k = this.potted.indexOf(type); if (k >= 0) this.potted.splice(k, 1);
+      // there is only one of each colour: one of this colour still believed hidden somewhere was a stale guess
+      if (COLOURS.includes(type)) this.world = this.world.filter(o => o.type !== type || !o.hidden);
       const w = { id: this.nid++, type, x: b.x, y: b.y, lab: b.lab, hidden: false };
       this.world.push(w); return w;
     }
@@ -528,9 +536,15 @@
         return;
       }
       if (!legal.length || e.inOff) { this._end(e.t, e.inOff ? "in-off" : "miss"); this._expect([]); return; }
-      // clearing the colours they must go in order, so a pot is the colour due (whatever the camera took it for)
-      const due = this.tracker && this.tracker.due;
-      const got = due ? [{ type: due, value: E_VALUE[due] }] : legal;
+      // clearing the colours they must go in order, so a pot is the colour due (whatever the camera took it for);
+      // the colours due after it seen going too are two shots seen as one (the table never settled between them)
+      const due = this.tracker && this.tracker.due, ORDER = ["yellow", "green", "brown", "blue", "pink", "black"];
+      let got = legal;
+      if (due) {
+        const types = legal.map(p => p.type); let n = 1;
+        while (n < legal.length && ORDER[ORDER.indexOf(due) + n] && types.includes(ORDER[ORDER.indexOf(due) + n])) n++;
+        got = ORDER.slice(ORDER.indexOf(due), ORDER.indexOf(due) + n).map(c => ({ type: c, value: E_VALUE[c] }));
+      }
       for (const p of got) { a.pots.push(p.type); a.score += this.metric === "break" ? p.value : 1; }
       this._expect(a.pots);
     }
