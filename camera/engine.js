@@ -112,6 +112,9 @@
         this._spotsFixed = true;
       }
       const balls = det.balls.map(b => ({ x: b.x, y: b.y, lab: [b.L, b.a, b.b], white: b.white, area: b.area }));
+      // Under bright light the pink can pass the whiteness test. Once the pink has been seen on its spot,
+      // a "white" ball that looks more like that pink than the cue ball is the pink.
+      if (this.pinkSeen) for (const b of balls) if (b.white && labDist(b.lab, this.proto.pink) < labDist(b.lab, this.proto.cue)) b.white = false;
       const occ = det.blobs.filter(b => b.edge), clusters = det.blobs.filter(b => !b.edge);
       // motion: a ball not within 2.5 px of any ball in the previous frame
       let moving = 0;
@@ -458,7 +461,7 @@
       for (const c of want) {
         const s = this.spots[c];
         const b = left.filter(b => dist(b, s) < 14).sort((a, b) => dist(a, s) - dist(b, s))[0];
-        if (b) { left.splice(left.indexOf(b), 1); W.push({ id: this.nid++, type: c, x: b.x, y: b.y, lab: b.lab }); this.proto[c] = b.lab; }
+        if (b) { left.splice(left.indexOf(b), 1); W.push({ id: this.nid++, type: c, x: b.x, y: b.y, lab: b.lab }); this.proto[c] = b.lab; if (c === "pink") this.pinkSeen = true; }
         else if (clusters.some(cl => inBox(s, cl, 4))) W.push({ id: this.nid++, type: c, x: s.x, y: s.y, lab: this.proto[c], hidden: true });
       }
       // wait (up to 20 s) for the drill's layout: every colour it starts with on its spot
