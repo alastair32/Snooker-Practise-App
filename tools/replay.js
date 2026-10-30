@@ -28,7 +28,8 @@ for (const f of lines.slice(1)) {
   tracker.feed(f.t, {
     balls: f.balls.map(([x, y, area, L, a, b]) => ({ x, y, area, L, a, b, white: V.isWhite({ L, a, b }) })),
     spots: f.spots && f.spots.map(s => s && { fg: s[0], L: s[1], a: s[2], b: s[3], covered: !!s[4] }),
-    blobs: f.blobs.map(([x0, y0, x1, y1, area, edge, L, a, b]) => ({ x0, y0, x1, y1, area, edge: !!edge, L, a, b, x: (x0 + x1) / 2, y: (y0 + y1) / 2 })),
+    blobs: f.blobs.map(([x0, y0, x1, y1, area, edge, L, a, b, parts]) => ({ x0, y0, x1, y1, area, edge: !!edge, L, a, b, x: (x0 + x1) / 2, y: (y0 + y1) / 2,
+      parts: parts && parts.map(([x, y, L, a, b]) => ({ x, y, L, a, b })) })),
   });
 }
 scorer.finish(lines[lines.length - 1].t);

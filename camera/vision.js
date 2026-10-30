@@ -15,6 +15,7 @@
   const SPOT_MM = (() => { const W = 1778, L = 3569;
     return { yellow: [W / 2 - 292, 737], brown: [W / 2, 737], green: [W / 2 + 292, 737], blue: [W / 2, L / 2], pink: [W / 2, L * 3 / 4], black: [W / 2, L - 324] }; })();
   const TABLE_MM = [1778, 3569];
+  const BALL_MM = 52.5;
 
   // ---- colour ----------------------------------------------------------------------------
   // sRGB -> CIE Lab in OpenCV's 8-bit convention (L 0-255, a and b offset by 128), so the
@@ -192,6 +193,48 @@
   // minL: how bright the cue ball must be (lower when the app has turned the camera's exposure down)
   const isWhite = (b, minL = 175) => b.L > minL && b.a > 92 && b.a < 120 && b.b > 128 && b.b < 155;
 
+  // How big a ball looks (radius in crop pixels) at a point: half a ball's width across the table there.
+  function ballRadius(cal, x, y) {
+    const [X, Y] = apply(cal.Hinv, [x, y]), [x1, y1] = apply(cal.Hm, [X + BALL_MM / 2, Y]);
+    return Math.hypot(x1 - x, y1 - y);
+  }
+  // Pick out the single balls in a cluster of touching balls. Every ball under the table lights shows one
+  // bright shine spot near its top, so each clear local brightness peak (no two closer than a ball radius)
+  // is a ball. Its centre is a little below the shine (cal.shineOff, learned from balls seen on their own),
+  // and its colour is the mean of the pixels around that centre, leaving out the shine.
+  function splitCluster(cal, W, L, A, B, pix, cx, cy) {
+    const r = ballRadius(cal, cx, cy), inBlob = new Set(pix);
+    let base = pix.map(j => L[j]).sort((a, b) => a - b); base = base[base.length >> 1];
+    const cand = pix.filter(j => L[j] > base + 25).sort((a, b) => L[b] - L[a]);
+    const peaks = [];
+    for (const j of cand) {
+      const x = j % W, y = (j / W) | 0;
+      const rj = ballRadius(cal, x, y);
+      if (peaks.some(p => Math.hypot(p.hx - x, p.hy - y) < rj)) continue;
+      // a peak: brightest within 2 px, and inside the cluster (its rim mixes with the bright cloth). The shine
+      // sits near the far edge of a ball, so only ask for a little room above and below it.
+      let peak = true; const ri = Math.max(2, Math.round(0.4 * rj));
+      for (const [dx, dy] of [[-ri, 0], [ri, 0], [0, -1], [0, 1]]) if (!inBlob.has(j + dy * W + dx)) peak = false;
+      for (let dy = -2; dy <= 2 && peak; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const k = j + dy * W + dx;
+        if (Math.hypot(dx, dy) <= 2 && inBlob.has(k) && L[k] > L[j]) { peak = false; break; }
+      }
+      if (!peak) continue;
+      peaks.push({ hx: x, hy: y, r: rj });
+    }
+    const [ox, oy] = cal.shineOff || [0, 0.35];
+    return peaks.map(p => {
+      const r = p.r, x = p.hx + ox * r, y = p.hy + oy * r; let n = 0, sL = 0, sA = 0, sB = 0;
+      for (let dy = -Math.ceil(r); dy <= r; dy++) for (let dx = -Math.ceil(r); dx <= r; dx++) {
+        if (Math.hypot(dx, dy) > 0.7 * r) continue;
+        const k = Math.round(y + dy) * W + Math.round(x + dx);
+        if (!inBlob.has(k) || L[k] > L[p.hy * W + p.hx] - 20) continue;
+        n++; sL += L[k]; sA += A[k]; sB += B[k];
+      }
+      return { x, y, r, L: n ? sL / n : 0, a: n ? sA / n : 0, b: n ? sB / n : 0 };
+    });
+  }
+
   // img: the table crop already scaled to cal.W x cal.H. Returns the balls seen, big blobs (a cluster of
   // touching balls inside the table, or the player/cue reaching in from the edge) and how much is covered.
   function detectFrame(cal, img) {
@@ -230,18 +273,20 @@
     const lab = new Int32Array(n), stack = []; let id = 0, big = 0; const balls = [], blobs = [];
     for (let i = 0; i < n; i++) {
       if (!m[i] || lab[i]) continue;
-      id++; lab[i] = id; stack.push(i);
+      id++; lab[i] = id; stack.push(i); const pix = [];
       let area = 0, sx = 0, sy = 0, sL = 0, sA = 0, sB = 0, x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1, edge = false;
       while (stack.length) {
         const j = stack.pop(), x = j % W, y = (j / W) | 0;
-        area++; sx += x; sy += y; sL += L[j]; sA += A[j]; sB += B[j]; if (cal.rim[j]) edge = true;
+        pix.push(j); area++; sx += x; sy += y; sL += L[j]; sA += A[j]; sB += B[j]; if (cal.rim[j]) edge = true;
         if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
         for (const k of [j - 1, j + 1, j - W, j + W]) if (k >= 0 && k < n && m[k] && !lab[k] && Math.abs((k % W) - x) <= 1) { lab[k] = id; stack.push(k); }
       }
       const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
       if (area > 450 || bw > 40 || bh > 40) {
         big += area;
-        blobs.push({ x0, y0, x1, y1, area, x: sx / area, y: sy / area, L: sL / area, a: sA / area, b: sB / area, edge });
+        const blob = { x0, y0, x1, y1, area, x: sx / area, y: sy / area, L: sL / area, a: sA / area, b: sB / area, edge };
+        if (!edge) blob.parts = splitCluster(cal, W, L, A, B, pix, blob.x, blob.y);
+        blobs.push(blob);
         continue;
       }
       if (area < 35) continue;
