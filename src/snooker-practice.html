@@ -1070,18 +1070,17 @@ function camFind(acc) {
   camStatus('<i class="camdot"></i>Table found. Setting the exposure: keep clear of the table…');
   camExposure(q, seq).then(note => {
     if (!cam.stream || seq !== cam.findSeq) return;
-    cam.cal = V.calibrate(q); cam.cal.whiteMinL = cam.whiteMinL; cam.expoNote = note;
+    cam.cal = V.calibrate(q); cam.expoNote = note;
     camOverlay(); camStatus('<i class="camdot on"></i>Table found' + (cam.scorer ? ", tracking" : "") + (note ? " · " + note : ""));
   });
 }
-// Bright lights wash the colours out (the pink starts to look like the cue ball, a red like the pink).
-// Where the phone lets the app set the exposure, try a few settings from normal to darker, keep the one where
-// the pink stands furthest apart from every other ball, then lock it so it doesn't change when a player
-// leans over the table. Returns a short note for the status line, or "" if the phone doesn't allow it.
+// Set the exposure for the table, not the room. A dim room, or lamps in view, make the camera expose for the
+// bright parts and the cloth comes out dark. Where the phone lets the page set the exposure, brighten until the
+// cloth looks about as bright as on a well-lit table, then lock it, so it doesn't change when a player leans
+// over the table. Returns a short note for the status line, or "" if the phone doesn't allow it.
 async function camExposure(q, seq) {
   const track = cam.stream && cam.stream.getVideoTracks()[0];
   const caps = track && track.getCapabilities ? track.getCapabilities() : {};
-  cam.whiteMinL = undefined;
   if (!caps.exposureCompensation) return "";
   const set = async c => { try { await track.applyConstraints({ advanced: [c] }); return true; } catch (e) { return false; } };
   const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -1089,57 +1088,49 @@ async function camExposure(q, seq) {
   if ((caps.exposureMode || []).includes("continuous")) await set({ exposureMode: "continuous" });
   if ((caps.whiteBalanceMode || []).includes("continuous")) await set({ whiteBalanceMode: "continuous" });
   const { min, max, step } = caps.exposureCompensation;
-  const evs = [0, -0.33, -0.67, -1].map(e => Math.min(max, Math.max(min, step ? Math.round(e / step) * step : e)))
-    .filter((e, i, a) => a.indexOf(e) === i);
-  // How the colours look: on each colour spot (where the balls sit at the start of every drill), how saturated
-  // the ball's colour is. Too much light clips it towards white; less light than that doesn't change it.
-  const look = () => {
-    const cal = V.calibrate(q), { sx, sy, sw, sh } = cal.crop, img = camGrab(sx, sy, sw, sh, cal.W, cal.H);
-    const balls = V.detectFrame(cal, img).balls, { L, A, B } = V.toLab(img.data, cal.W * cal.H), [ca, cb] = cal.cloth;
-    const chroma = {};
-    ["yellow", "green", "brown", "blue", "pink"].forEach(c => {
-      const [x0, y0] = cal.spots[V.SPOT_NAMES.indexOf(c)]; let s = 0, n = 0;
-      for (let y = Math.round(y0) - 7; y <= y0 + 7; y++) for (let x = Math.round(x0) - 7; x <= x0 + 7; x++) {
-        if (x < 0 || y < 0 || x >= cal.W || y >= cal.H || Math.hypot(x - x0, y - y0) > 7) continue;
-        const i = y * cal.W + x; if (Math.hypot(A[i] - ca, B[i] - cb) < 20) continue;   // cloth
-        const d = img.data, r = d[4 * i], g = d[4 * i + 1], b = d[4 * i + 2], mx = Math.max(r, g, b);
-        s += mx ? 255 * (mx - Math.min(r, g, b)) / mx : 0; n++;   // saturation: falls when the light clips the colour
-      }
-      if (n >= 6) chroma[c] = s / n;
-    });
-    const cue = balls.filter(b => b.a < 120 && b.b < 160).sort((a, b) => b.L - a.L)[0];
-    return { chroma, cueL: cue ? cue.L : null };
+  const snap = e => +Math.min(max, Math.max(min, step ? Math.round(e / step) * step : e)).toFixed(3);
+  // how bright the cloth looks: the middle of its brightest channel, over three frames
+  const clothV = () => {
+    const cal = V.calibrate(q), { sx, sy, sw, sh } = cal.crop, d = camGrab(sx, sy, sw, sh, cal.W, cal.H).data, vs = [];
+    for (let i = 0; i < cal.W * cal.H; i += 5) if (cal.inside[i]) vs.push(Math.max(d[4 * i], d[4 * i + 1], d[4 * i + 2]));
+    vs.sort((a, b) => a - b); return vs[vs.length >> 1] || 0;
   };
+  const look = () => [clothV(), clothV(), clothV()].sort((a, b) => a - b)[1];
   const tried = [];
-  for (const ev of evs) {
-    if (!cam.stream || seq !== cam.findSeq || !(await set({ exposureCompensation: ev }))) break;
+  const measure = async ev => {
+    if (!cam.stream || seq !== cam.findSeq || !(await set({ exposureCompensation: ev }))) return null;
     await wait(900);
-    const s = [0, 1, 2].map(() => look()), mid = v => v.sort((a, b) => a - b)[v.length >> 1];
-    const chroma = {};
-    for (const c of Object.keys(s[0].chroma)) { const v = s.map(x => x.chroma[c]).filter(x => x != null); if (v.length >= 2) chroma[c] = mid(v); }
-    const cl = s.map(x => x.cueL).filter(x => x != null);
-    tried.push({ ev, chroma, cueL: cl.length ? mid(cl) : null });
-    await wait(150);
+    const t = { ev, cloth: look() }; tried.push(t); return t;
+  };
+  // raise the exposure while the cloth is dim: on the well-lit tables the detection was tuned on it is about 215
+  let base = await measure(snap(0));
+  for (let k = 0; k < 4 && base && base.cloth < 200 && base.ev < Math.min(max, 2); k++) {
+    const next = await measure(snap(Math.min(2, base.ev + Math.max(step || 0.1, 0.8 * Math.log2(215 / Math.max(20, base.cloth))))));
+    if (!next || next.ev === base.ev) break;
+    base = next;
   }
-  if (!tried.length || seq !== cam.findSeq) return "";
-  // score each setting by the colour saturation of the balls seen on their spots at normal exposure;
-  // skip settings where the cue ball gets dull
-  const base = tried[0], spots = Object.keys(base.chroma);
-  const score = t => spots.every(c => t.chroma[c] != null) ? spots.reduce((a, c) => a + t.chroma[c], 0) / spots.length : -1;
-  // a darker setting must help across the board (a ball hidden by someone walking past makes one spot drop)
-  const ok = tried.filter(t => spots.length && score(t) >= 0 && (t.cueL == null || t.cueL > 140) && spots.every(c => t.chroma[c] > base.chroma[c] - 5));
-  const best = ok.length ? ok.reduce((a, b) => (score(b) > score(a) + 4 ? b : a)) : base;
-  if (window.camDebug) console.log("exposure", JSON.stringify(tried.map(t => ({ ev: +t.ev.toFixed(2), score: Math.round(score(t)), cueL: Math.round(t.cueL), ch: Object.fromEntries(Object.entries(t.chroma).map(([k, v]) => [k, Math.round(v)])) }))), "chose", best.ev);
+  if (!base || seq !== cam.findSeq) return "";
+  // (Never darker than the camera's own choice: the ball detection is tuned on well-lit tables, and even
+  // 10% darker frames can throw it off.)
+  const best = base;
+  if (window.camDebug) console.log("exposure", JSON.stringify(tried.map(t => ({ ev: t.ev, cloth: Math.round(t.cloth) }))), "chose", best.ev);
   await set({ exposureCompensation: best.ev });
   await wait(900);
-  // the cue ball is darker at a lower exposure: lower the whiteness test with it
-  if (best.cueL != null && base.cueL != null && best.cueL < base.cueL) cam.whiteMinL = Math.min(175, best.cueL - 25);
-  // lock exposure and white balance where the phone allows it
+  // lock exposure and white balance where the phone allows it, and check the picture didn't change
+  // brightness when it locked (if it did, leave the camera on automatic)
   let locked = false;
-  const st = track.getSettings ? track.getSettings() : {};
+  const st = track.getSettings ? track.getSettings() : {}, before = look();
   if ((caps.exposureMode || []).includes("manual") && st.exposureTime) locked = await set({ exposureMode: "manual", exposureTime: st.exposureTime, ...(st.iso ? { iso: st.iso } : {}) });
   if ((caps.whiteBalanceMode || []).includes("manual") && st.colorTemperature) await set({ whiteBalanceMode: "manual", colorTemperature: st.colorTemperature });
-  return "exposure " + (best.ev ? (best.ev > 0 ? "+" : "−") + Math.abs(best.ev).toFixed(1) : "0") + (locked ? ", locked" : "");
+  if (locked) {
+    await wait(900); const after = look();
+    if (Math.abs(after - before) > 0.12 * before) {
+      locked = false;
+      await set({ exposureMode: "continuous" }); await set({ whiteBalanceMode: "continuous" }); await set({ exposureCompensation: best.ev });
+    }
+  }
+  return "exposure " + (best.ev ? (best.ev > 0 ? "+" : "−") + Math.abs(best.ev).toFixed(1) : "0") + (locked ? ", locked" : "") +
+    (best.cloth < 120 ? " · the table looks dark: more light on it will help" : "");
 }
 // Start following the table: a new tracker for this drill (or frame) and a scorer that reports to `kind`.
 function camTrack(expect, scorer, drillMode) {
