@@ -238,11 +238,39 @@
     });
   }
 
+  // Light correction (colour constancy with the cloth as the reference). The thresholds here were tuned on
+  // videos where the cloth's green channel reads 200-230. When the room is darker or brighter than that, scale
+  // the whole frame so the cloth comes back to the nearest edge of that band, the way a camera's exposure would.
+  // The cloth's level is the median over the table, smoothed over frames so a player leaning over doesn't
+  // change it. Frames already inside the band are left exactly as they are.
+  const CLOTH_G = [208, 226], CLOTH_BG = [0.52, 0.58];   // cloth green level, and blue / green
+  let lightBuf = null;
+  function normaliseLight(cal, data, n) {
+    const { inside } = cal, gs = [], bs = [];
+    for (let i = 0; i < n; i += 13) if (inside[i]) { gs.push(data[i * 4 + 1]); bs.push(data[i * 4 + 2]); }
+    if (!gs.length) return data;
+    const med = a => a.sort((x, y) => x - y)[a.length >> 1];
+    const g = med(gs), bg = med(bs) / Math.max(1, g);
+    cal.clothG = cal.clothG == null ? g : cal.clothG * 0.8 + g * 0.2;
+    cal.clothBG = cal.clothBG == null ? bg : cal.clothBG * 0.8 + bg * 0.2;
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const gain = clamp(clamp(cal.clothG, ...CLOTH_G) / Math.max(1, cal.clothG), 0.6, 2.5);
+    // white balance: the cloth's blue against its green (its red is near zero, so red can't be corrected)
+    const bGain = gain * clamp(clamp(cal.clothBG, ...CLOTH_BG) / Math.max(0.01, cal.clothBG), 0.8, 1.25);
+    cal.lightGain = gain;
+    if (Math.abs(gain - 1) < 0.01 && Math.abs(bGain - 1) < 0.01) return data;
+    if (!lightBuf || lightBuf.length !== data.length) lightBuf = new Uint8ClampedArray(data.length);
+    for (let p = 0; p < data.length; p += 4) {
+      lightBuf[p] = data[p] * gain; lightBuf[p + 1] = data[p + 1] * gain; lightBuf[p + 2] = data[p + 2] * bGain; lightBuf[p + 3] = 255;
+    }
+    return lightBuf;
+  }
+
   // img: the table crop already scaled to cal.W x cal.H. Returns the balls seen, big blobs (a cluster of
   // touching balls inside the table, or the player/cue reaching in from the edge) and how much is covered.
   function detectFrame(cal, img) {
     const { W, H, inside } = cal, n = W * H;
-    const { L, A, B } = toLab(img.data, n);
+    const { L, A, B } = toLab(normaliseLight(cal, img.data, n), n);
     if (!cal.cloth) {                                           // cloth colour: median a, b inside the table
       const as = [], bs = [];
       for (let i = 0; i < n; i += 7) if (inside[i]) { as.push(A[i]); bs.push(B[i]); }

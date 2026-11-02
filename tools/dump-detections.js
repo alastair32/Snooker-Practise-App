@@ -12,13 +12,15 @@ const fs = require("fs");
 const V = require("../camera/vision.js");
 
 const [video, out, fps = "10"] = process.argv.slice(2);
+// Optional ffmpeg filter applied to every frame first (robustness tests), e.g. PRE_VF="eq=brightness=-0.05"
+const PRE = process.env.PRE_VF ? process.env.PRE_VF + "," : "";
 const [FW, FH] = frameSize(video);
 const dur = +execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video]).toString().trim();
 
 // Calibrate on the per-pixel median of 9 frames across the video, so a player walking past doesn't matter.
 const stills = [];
 for (let k = 1; k <= 9; k++) {
-  stills.push(execFileSync("ffmpeg", ["-v", "error", "-ss", String(dur * k / 10), "-i", video, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"], { maxBuffer: 1 << 28 }));
+  stills.push(execFileSync("ffmpeg", ["-v", "error", "-ss", String(dur * k / 10), "-i", video, "-frames:v", "1", ...(PRE ? ["-vf", PRE.slice(0, -1)] : []), "-f", "rawvideo", "-pix_fmt", "rgba", "-"], { maxBuffer: 1 << 28 }));
 }
 const med = Buffer.alloc(FW * FH * 4), tmp = new Uint8Array(9);
 for (let i = 0; i < med.length; i++) { for (let k = 0; k < 9; k++) tmp[k] = stills[k][i]; tmp.sort(); med[i] = tmp[4]; }
@@ -31,7 +33,7 @@ const ws = fs.createWriteStream(out);
 ws.write(JSON.stringify({ meta: { ...meta, video, fps: +fps, frame: [FW, FH] } }) + "\n");
 
 const ff = spawn("ffmpeg", ["-v", "error", "-i", video, "-vf",
-  `fps=${fps},crop=${Math.round(sw)}:${Math.round(sh)}:${Math.round(sx)}:${Math.round(sy)},scale=${cal.W}:${cal.H}`,
+  `${PRE}fps=${fps},crop=${Math.round(sw)}:${Math.round(sh)}:${Math.round(sx)}:${Math.round(sy)},scale=${cal.W}:${cal.H}`,
   "-f", "rawvideo", "-pix_fmt", "rgba", "-"]);
 const size = cal.W * cal.H * 4; let buf = Buffer.alloc(0), k = 0;
 const r1 = v => Math.round(v * 10) / 10;
