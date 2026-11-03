@@ -945,13 +945,60 @@ function addScore(raw) {
 }
 function fixScore(r, ei, si, v) {
   const e = r.entries[ei], a = attOf(e)[si]; if (!a) return;
-  if (v !== e.scores[si]) a.fixed = true;
+  if (v !== e.scores[si]) { a.fixed = true; if (a.src === "cam") keepWrong(e, a, e.scores[si], v); }
   e.scores[si] = v; a.ok = true; r.fixing = null; r.review = null; clipDone(a);
 }
 function attOk(r, ei, si) { const e = r.entries[ei], a = e && attOf(e)[si]; if (a) { a.ok = true; clipDone(a); } r.review = null; r.fixing = null; }
 function attDel(r, ei, si) {
   const e = r.entries[ei]; if (!e || si < 0 || si >= e.scores.length) return;
-  const a = attOf(e).splice(si, 1)[0]; e.scores.splice(si, 1); clipDone(a); r.review = null; r.fixing = null; r.input = "";
+  const a = attOf(e).splice(si, 1)[0];
+  if (a && a.src === "cam") keepWrong(e, a, e.scores[si], null);
+  e.scores.splice(si, 1); clipDone(a); r.review = null; r.fixing = null; r.input = "";
+}
+// ---- clips the camera got wrong ----
+// With the option on (it is by default), a camera score that is fixed or removed keeps its clip, labelled
+// with what the camera said and the right score. They are offered as one zip file (clips + labels.json) on
+// the session summary, to be added to the test videos the tracker is tuned and checked on.
+const WRONG_KEEP = 15;
+const keepWrongOn = () => LS.get("snk.keepwrong") !== false;
+function keepWrong(e, a, camScore, trueScore) {
+  if (!keepWrongOn() || !a.id) return;
+  const label = { drill: e.drillName, drillId: e.drillId, metric: e.metric, per: e.per, camScore, trueScore, notAnAttempt: trueScore == null,
+    pots: a.pots || [], ended: a.why || "", date: todayISO(), quad: cam.cal ? cam.cal.quad.map(p => p.map(Math.round)) : null,
+    frame: (() => { const v = $("#camvideo"); return v && v.videoWidth ? [v.videoWidth, v.videoHeight] : null; })() };
+  const c = cam.clipFor[a.id];
+  if (c) { label.seek = +c.seek.toFixed(1); cam.wrong.push({ label, blob: c.blob, id: a.id }); delete cam.clipFor[a.id]; }
+  else if (cam.clipPending[a.id]) cam.wrongWaiting[a.id] = label;   // the clip is still being saved: keep it when it is
+  else return;
+  while (cam.wrong.length > WRONG_KEEP) cam.wrong.shift();
+}
+// A zip file (stored, not compressed: video doesn't compress) of the kept clips and their labels.
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = u => { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+async function makeZip(files) {
+  const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+  for (const f of files) {
+    const data = f.data instanceof Uint8Array ? f.data : new Uint8Array(await f.data.arrayBuffer()), name = enc.encode(f.name), crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    [[0, 0x04034b50, 4], [4, 20, 2], [8, 0, 2], [14, crc, 4], [18, data.length, 4], [22, data.length, 4], [26, name.length, 2]].forEach(([o, v, n]) => n === 4 ? h.setUint32(o, v, true) : h.setUint16(o, v, true));
+    parts.push(h.buffer, name, data);
+    const c = new DataView(new ArrayBuffer(46));
+    [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [16, crc, 4], [20, data.length, 4], [24, data.length, 4], [28, name.length, 2], [42, off, 4]].forEach(([o, v, n]) => n === 4 ? c.setUint32(o, v, true) : c.setUint16(o, v, true));
+    central.push(c.buffer, name);
+    off += 30 + name.length + data.length;
+  }
+  const size = central.reduce((n, b) => n + b.byteLength, 0), end = new DataView(new ArrayBuffer(22));
+  [[0, 0x06054b50, 4], [8, files.length, 2], [10, files.length, 2], [12, size, 4], [16, off, 4]].forEach(([o, v, n]) => n === 4 ? end.setUint32(o, v, true) : end.setUint16(o, v, true));
+  return new Blob([...parts, ...central, end.buffer], { type: "application/zip" });
+}
+async function wrongZip() {
+  const files = [], labels = [];
+  cam.wrong.forEach((w, k) => {
+    const name = `clip${k + 1}-${w.label.drill.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-camera${w.label.camScore}-${w.label.notAnAttempt ? "not-an-attempt" : "right" + w.label.trueScore}.${vidExt(w.blob)}`;
+    files.push({ name, data: w.blob }); labels.push(Object.assign({ file: name }, w.label));
+  });
+  files.unshift({ name: "labels.json", data: new TextEncoder().encode(JSON.stringify(labels, null, 2)) });
+  return makeZip(files);
 }
 // the attempt the check card is showing, for the watching screen: the one on the phone's screen, else the
 // oldest unchecked camera score of the session
@@ -1093,7 +1140,7 @@ const V = window.SnookerVision, EN = window.SnookerEngine;
 const CAM_OK = !!(V && EN && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 const CAM_TRACKS = ["Potting", "Break-building", "Long game"];   // drills judged by pots; the rest are recorded only
 const cam = { stream: null, cal: null, tracker: null, scorer: null, t0: 0, loop: null, findTimer: null, rec: null, recParts: [], recType: "",
-  clipRec: null, clipFor: {}, clipPending: {},
+  clipRec: null, clipFor: {}, clipPending: {}, wrong: [], wrongWaiting: {},
   mode: "none", clips: [], session: null, best: {}, kind: null, frames: 0 };
 let match = null;   // free-play scorer
 
@@ -1318,7 +1365,10 @@ function clipCut(r, id, startAt) {
   clipStop().then(c => {
     delete cam.clipPending[id];
     if (c) {
-      cam.clipFor[id] = { url: URL.createObjectURL(c.blob), seek: Math.max(0, (startAt - c.t0) / 1000 - 1), t: Date.now() };
+      cam.clipFor[id] = { url: URL.createObjectURL(c.blob), blob: c.blob, seek: Math.max(0, (startAt - c.t0) / 1000 - 1), t: Date.now() };
+      // already fixed or removed while the clip was being saved: keep it as one the camera got wrong
+      const lw = cam.wrongWaiting[id];
+      if (lw) { delete cam.wrongWaiting[id]; lw.seek = +cam.clipFor[id].seek.toFixed(1); cam.wrong.push({ label: lw, blob: c.blob, id }); URL.revokeObjectURL(cam.clipFor[id].url); delete cam.clipFor[id]; while (cam.wrong.length > WRONG_KEEP) cam.wrong.shift(); }
       // keep memory bounded: drop the oldest clips of scores already checked, then the oldest of all
       const ids = Object.keys(cam.clipFor).sort((x, y) => cam.clipFor[x].t - cam.clipFor[y].t);
       const okIds = new Set(); if (draft) draft.entries.forEach(e => attOf(e).forEach(a => { if (a.ok && a.id) okIds.add(a.id); }));
@@ -1361,11 +1411,13 @@ function camCard(r) {
   return `<article class="card"><div class="row between"><div class="grow"><h3>Track with camera</h3>
     <p class="small muted">${on ? (judge ? "Scores each attempt for you; correct any it gets wrong." : "This drill is judged on cue ball position, which the camera can't score yet. It will still record.") : "Prop the phone behind the black end so it sees the whole table."}</p></div>
     <button data-act="cam-toggle" aria-pressed="${on ? "true" : "false"}"${on ? ' class="primary"' : ""}>${on ? "On" : "Off"}</button></div>
-    ${on ? `<label class="field">Video<select id="cam-save">${opt("none", "Don't save, just track")}${opt("best", "Save the best attempt of each drill")}${opt("all", "Save the whole session")}</select></label>` : ""}</article>`;
+    ${on ? `<label class="field">Video<select id="cam-save">${opt("none", "Don't save, just track")}${opt("best", "Save the best attempt of each drill")}${opt("all", "Save the whole session")}</select></label>
+    <label class="row small" style="gap:8px;align-items:center"><input type="checkbox" data-act="keep-wrong"${keepWrongOn() ? " checked" : ""}> Keep clips the camera gets wrong, to help improve it</label>` : ""}</article>`;
 }
 function camVideosHTML() {
   const best = Object.values(cam.best), rows = best.map(c => `<li>${vidLink(c.blob, `${c.name} best (${c.score})`)}</li>`);
   if (cam.session) rows.unshift(`<li>${vidLink(cam.session, "Whole session " + todayISO())}</li>`);
+  if (cam.wrong.length) rows.push(`<li><button class="ghost" data-act="wrong-zip">Download ${cam.wrong.length} clip${cam.wrong.length > 1 ? "s" : ""} the camera got wrong</button> <span class="muted small">${(cam.wrong.reduce((n, w) => n + w.blob.size, 0) / 1048576).toFixed(0)} MB zip with the right scores: send it in to improve the camera</span></li>`);
   if (!rows.length) return "";
   return `<article class="card"><h3>Videos</h3><ul class="plain vidlist">${rows.join("")}</ul><p class="small muted">Download them before you save: the app doesn't keep videos.</p></article>`;
 }
@@ -1648,7 +1700,7 @@ function arm(key) {
   redraw();
 }
 function setPath(obj, path, val) { const ks = path.split("."); let o = obj; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = val; }
-function startRun(planId, planName, items) { cam.best = {}; cam.session = null; go("run", newRun(planId, planName, items)); }
+function startRun(planId, planName, items) { cam.best = {}; cam.session = null; cam.wrong = []; cam.wrongWaiting = {}; go("run", newRun(planId, planName, items)); }
 
 document.addEventListener("submit", ev => {
   if (ev.target.dataset.form === "w-fix") {
@@ -1792,6 +1844,8 @@ document.addEventListener("click", ev => {
     case "att-open": r.review = { ei: +b.dataset.e, si: i }; r.fixing = null; persistRun(); renderScores(); break;
     case "att-close": r.review = null; r.fixing = null; r.input = ""; persistRun(); renderScores(); break;
     case "att-ok": attOk(r, +b.dataset.e, i); persistRun(); renderScores(); break;
+    case "keep-wrong": LS.set("snk.keepwrong", b.checked); break;
+    case "wrong-zip": wrongZip().then(z => saveBlob(z, `camera-corrections-${todayISO()}.zip`)); break;
     case "att-okall": r.entries.forEach(e => attOf(e).forEach(a => { if (!a.ok) { a.ok = true; clipDone(a); } })); r.review = null; persistRun(); renderScores(); break;
     case "att-fix": {
       const ei = +b.dataset.e, e = r.entries[ei]; if (!e) break;
@@ -1816,6 +1870,7 @@ document.addEventListener("click", ev => {
       const log = { id: r.id, date: r.date || todayISO(), planId: r.planId, planName: r.planName, minutes: r.minutes == null || r.minutes === "" ? total : (+r.minutes || 0), notes: r.notes || "", created: r.created,
         entries: r.entries.map(e => ({ drillId: e.drillId, drillName: e.drillName, cat: e.cat, metric: e.metric, per: e.per, scores: e.scores, seconds: e.seconds, plannedMin: e.plannedMin })) };
       for (const k of Object.keys(cam.clipFor)) { URL.revokeObjectURL(cam.clipFor[k].url); delete cam.clipFor[k]; }
+      cam.wrong = []; cam.wrongWaiting = {};
       saveLog(log); LS.del("snk.run"); camOff(); linkStop(); link.open = false; toast("Session saved"); go("home"); break;
     }
     case "run-discard": if (armed !== "run-discard") { arm("run-discard"); break; } LS.del("snk.run"); keepAwake(false); camOff(); toast("Session discarded"); go("home"); break;
