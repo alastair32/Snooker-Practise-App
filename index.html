@@ -909,7 +909,7 @@ function reviewHTML(r, ei, si) {
     ? `Camera scored attempt ${si + 1}: <b>${e.scores[si]}</b>${a.pots && a.pots.length ? ` <span class="muted">(${esc(a.pots.join(", "))})</span>` : ""}${a.fixed ? " · fixed by you" : ""}`
     : `Attempt ${si + 1}: <b>${e.scores[si]}</b> <span class="muted">(entered by you)</span>`;
   return `<article class="card review stack"><p class="eyebrow">${a.ok ? "Change a score" : "Check this score"}</p><p>${what}</p>
-    ${clip ? `<video src="${clip.url}" data-seek="${clip.seek}" controls muted playsinline preload="metadata"></video>` : a.src === "cam" && !a.ok ? `<p class="small muted">${a.id && cam.clipPending[a.id] ? "Saving the clip…" : "No clip for this attempt."}</p>` : ""}
+    ${clip ? `<video src="${clip.url}" data-seek="${clip.seek}" controls muted playsinline preload="metadata"></video>` : a.src === "cam" && !a.ok ? `<p class="small muted">${a.id && cam.clipPending[a.id] ? "Saving the clip…" : a.remote ? "The clip is on the other screen." : "No clip for this attempt."}</p>` : ""}
     ${fixing ? `<p class="small">Enter the right score below and press Add.</p>` : ""}
     <div class="row">${a.ok ? "" : `<button class="primary" data-act="att-ok" data-e="${ei}" data-i="${si}">Score is right</button>`}
       <button data-act="att-fix" data-e="${ei}" data-i="${si}"${fixing ? ' aria-pressed="true"' : ""}>Fix it</button>
@@ -917,7 +917,20 @@ function reviewHTML(r, ei, si) {
       ${a.ok || r.review ? `<button class="ghost" data-act="att-close">Close</button>` : ""}</div></article>`;
 }
 // start each clip at the attempt (it may begin with the table being set up)
-function seekClips() { document.querySelectorAll("video[data-seek]").forEach(v => { v.addEventListener("loadedmetadata", () => { try { v.currentTime = +v.dataset.seek || 0; } catch (e) {} }, { once: true }); }); }
+// (a recorded WebM has no duration in its header, so the player can't scrub it: jump past the end once to make
+// it read the length, then go to the attempt)
+function seekClips() {
+  document.querySelectorAll("video[data-seek]").forEach(v => {
+    if (v.dataset.seeking) return; v.dataset.seeking = "1";
+    const go = () => { try { v.currentTime = +v.dataset.seek || 0; } catch (e) {} };
+    const ready = () => {
+      if (isFinite(v.duration)) { go(); return; }
+      v.addEventListener("durationchange", () => go(), { once: true });
+      try { v.currentTime = 1e101; } catch (e) { go(); }
+    };
+    if (v.readyState >= 1) ready(); else v.addEventListener("loadedmetadata", ready, { once: true });
+  });
+}
 function chipsHTML(e, ei, s) {
   const att = attOf(e);
   return e.scores.map((v, i) => `<button class="att${s && v === s.best ? " top" : ""}${att[i].src === "cam" ? " cam" : ""}${att[i].ok ? "" : " unchk"}" data-act="att-open" data-e="${ei}" data-i="${i}" title="${att[i].src === "cam" ? (att[i].ok ? "Camera score, checked" : "Camera score, not checked yet") : "Entered by you"}: tap to change">${v}</button>`).join("");
@@ -980,7 +993,7 @@ function keepWrong(e, a, camScore, trueScore) {
   const c = cam.clipFor[a.id];
   if (c) { label.seek = +c.seek.toFixed(1); cam.wrong.push({ label, blob: c.blob, id: a.id }); delete cam.clipFor[a.id]; }
   else if (cam.clipPending[a.id]) cam.wrongWaiting[a.id] = label;   // the clip is still being saved: keep it when it is
-  else return;
+  else { if (a.remote) { cam.wrongRemote.push(Object.assign({ id: a.id }, label)); if (cam.wrongRemote.length > 30) cam.wrongRemote.shift(); } return; }
   while (cam.wrong.length > WRONG_KEEP) cam.wrong.shift();
 }
 // A zip file (stored, not compressed: video doesn't compress) of the kept clips and their labels.
@@ -1002,9 +1015,9 @@ async function makeZip(files) {
   [[0, 0x06054b50, 4], [8, files.length, 2], [10, files.length, 2], [12, size, 4], [16, off, 4]].forEach(([o, v, n]) => n === 4 ? end.setUint32(o, v, true) : end.setUint16(o, v, true));
   return new Blob([...parts, ...central, end.buffer], { type: "application/zip" });
 }
-async function wrongZip() {
+async function wrongZip(list = cam.wrong) {
   const files = [], labels = [];
-  cam.wrong.forEach((w, k) => {
+  list.forEach((w, k) => {
     const name = `clip${k + 1}-${w.label.drill.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-camera${w.label.camScore}-${w.label.notAnAttempt ? "not-an-attempt" : "right" + w.label.trueScore}.${vidExt(w.blob)}`;
     files.push({ name, data: w.blob }); labels.push(Object.assign({ file: name }, w.label));
   });
@@ -1151,7 +1164,7 @@ const V = window.SnookerVision, EN = window.SnookerEngine;
 const CAM_OK = !!(V && EN && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 const CAM_TRACKS = ["Potting", "Break-building", "Long game"];   // drills judged by pots; the rest are recorded only
 const cam = { stream: null, cal: null, tracker: null, scorer: null, t0: 0, loop: null, findTimer: null, rec: null, recParts: [], recType: "",
-  clipRec: null, clipFor: {}, clipPending: {}, wrong: [], wrongWaiting: {},
+  clipRec: null, clipFor: {}, clipPending: {}, wrong: [], wrongWaiting: {}, wrongRemote: [],
   mode: "none", clips: [], session: null, best: {}, kind: null, frames: 0 };
 let match = null;   // free-play scorer
 
@@ -1355,8 +1368,11 @@ function camBeginDrill(r) {
 // runs from the end of the previous attempt, so it starts with the set-up) and starts again. Clips stay in
 // memory only; the oldest checked ones go first so a long session doesn't fill the phone's memory.
 const CLIP_KEEP = 12;
+// While the camera is being sent to another screen the phone records no clips: many phones can't encode the
+// live feed and a recording at once (the feed stops). The other screen records the clips from the feed instead.
+const feedOut = () => !!(link.conn && link.conn.open && link.call && link.callStream === cam.stream);
 function clipStart() {
-  if (!cam.stream || !window.MediaRecorder || (cam.clipRec && cam.clipRec.state !== "inactive")) return;
+  if (!cam.stream || !window.MediaRecorder || feedOut() || (cam.clipRec && cam.clipRec.state !== "inactive")) return;
   const type = ["video/mp4", "video/webm;codecs=vp9", "video/webm"].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
   let rec; try { rec = new MediaRecorder(cam.stream, type ? { mimeType: type, videoBitsPerSecond: 1200000 } : undefined); } catch (e) { return; }
   const parts = []; rec.ondataavailable = ev => { if (ev.data && ev.data.size) parts.push(ev.data); };
@@ -1394,7 +1410,7 @@ function camAttempt(r, entry, a) {
   if (draft !== r || r.cur !== entry || r.phase !== "running") return;
   const e = curEntry(r), v = Math.max(0, Math.min(a.score, maxFor(scoringOf(r))));
   const id = "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  attOf(e); e.scores.push(v); e.att.push({ src: "cam", ok: false, id, pots: a.pots || [], why: a.why });
+  attOf(e); e.scores.push(v); e.att.push({ src: "cam", ok: false, id, pots: a.pots || [], why: a.why, ago: +(camTime() - a.start).toFixed(1), remote: feedOut() });
   e.cam = (e.cam || 0) + 1;
   clipCut(r, id, cam.t0 + a.start * 1000);
   persistRun(); renderScores();
@@ -1492,7 +1508,7 @@ async function watchStart() {
     c.on("data", d => {
       if (watch !== w) return;
       if (d && d.clip) { watchClipPart(w, d); return; }
-      w.state = d; renderWatch();
+      w.state = d; watchRecTick(w); watchKeepWrong(w); renderWatch();
     });
     c.on("close", () => { if (watch !== w) return; w.status = "The phone disconnected. It can reconnect with the same code."; w.state = null; renderWatch(); });
   });
@@ -1511,17 +1527,57 @@ function watchClipPart(w, d) {
   if (!p.bufs[d.part]) { p.bufs[d.part] = d.data; p.got++; }
   if (p.got === d.of) { w.clips[d.clip] = URL.createObjectURL(new Blob(p.bufs, { type: d.type || "video/webm" })); delete w.parts[d.clip]; renderWatch(); }
 }
+// The phone doesn't record clips while it sends its camera here, so this screen records the feed and cuts a
+// clip each time the phone reports a new camera-scored attempt (ago = how long before that the attempt began).
+function watchRecTick(w) {
+  const st = w.state, running = st && st.kind === "run" && st.phase === "running";
+  w.seen = w.seen || {}; w.clips = w.clips || {}; w.blobs = w.blobs || {}; w.seeks = w.seeks || {};
+  if (!running || !w.stream || !window.MediaRecorder) { if (w.rec) watchRecStop(w); return; }
+  const fresh = (st.clipIds || []).filter(c => !w.seen[c.id]);
+  if (w.rec && fresh.length) {
+    fresh.forEach(c => { w.seen[c.id] = true; });
+    const c = fresh[fresh.length - 1], at = performance.now();
+    watchRecStop(w).then(r => {
+      if (r) { w.blobs[c.id] = r.blob; w.clips[c.id] = URL.createObjectURL(r.blob); w.seeks[c.id] = Math.max(0, (at - r.t0) / 1000 - c.ago - 1); watchKeepWrong(w); renderWatch(); }
+    });
+  } else fresh.forEach(c => { w.seen[c.id] = true; });   // attempts from before recording started
+  if (!w.rec) {
+    const type = ["video/webm;codecs=vp9", "video/webm", "video/mp4"].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
+    try { const rec = new MediaRecorder(w.stream, type ? { mimeType: type, videoBitsPerSecond: 1500000 } : undefined); rec.parts = []; rec.t0 = performance.now();
+      rec.ondataavailable = ev => { if (ev.data && ev.data.size) rec.parts.push(ev.data); }; rec.start(1000); w.rec = rec; } catch (e) {}
+  }
+  // keep memory bounded
+  const ids = Object.keys(w.clips); while (ids.length > 12) { const x = ids.shift(); URL.revokeObjectURL(w.clips[x]); delete w.clips[x]; delete w.blobs[x]; }
+}
+function watchRecStop(w) {
+  const rec = w.rec; w.rec = null;
+  return new Promise(res => {
+    if (!rec || rec.state === "inactive") { res(null); return; }
+    rec.onstop = () => res(rec.parts.length ? { blob: new Blob(rec.parts, { type: rec.mimeType || "video/webm" }), t0: rec.t0 } : null);
+    try { rec.stop(); } catch (e) { res(null); }
+  });
+}
+// clips of scores the phone says the camera got wrong: keep them for the corrections zip
+function watchKeepWrong(w) {
+  w.wrong = w.wrong || [];
+  for (const l of (w.state && w.state.wrong) || []) {
+    if (!w.blobs || !w.blobs[l.id] || w.wrong.some(x => x.id === l.id)) continue;
+    const { id, ...label } = l; label.seek = +((w.seeks[id] || 0).toFixed(1));
+    w.wrong.push({ id, label, blob: w.blobs[id] }); while (w.wrong.length > WRONG_KEEP) w.wrong.shift();
+  }
+}
 function watchCheckHTML() {
   const st = watch && watch.state, c = st && st.check; if (!c || !watch.conn) return "";
   const url = c.id && watch.clips && watch.clips[c.id], parts = c.id && watch.parts && watch.parts[c.id];
+  const seek = c.clip ? c.clip.seek : (watch.seeks && watch.seeks[c.id]) || 0;
   const btn = (v, t, cls = "") => `<button class="${cls}" data-act="w-check" data-v="${v}">${t}</button>`;
   return `<article class="card review stack"><p class="eyebrow">${c.ok ? "Change a score" : "Check this score"} · ${esc(c.drill)}</p>
     <p>${c.src === "cam" ? `Camera scored attempt ${c.n}: <b>${c.score}</b>${c.pots.length ? ` <span class="muted">(${esc(c.pots.join(", "))})</span>` : ""}${c.fixed ? " · fixed" : ""}` : `Attempt ${c.n}: <b>${c.score}</b>`}</p>
-    ${url ? `<video src="${url}" data-seek="${c.clip ? c.clip.seek : 0}" controls muted playsinline autoplay preload="auto"></video>`
-      : c.clip || c.waiting ? `<p class="small muted">Getting the clip from the phone${parts ? ` (${Math.round(100 * parts.got / Math.max(1, parts.bufs.length))}%)` : ""}…</p>` : c.src === "cam" ? `<p class="small muted">No clip for this attempt.</p>` : ""}
+    ${url ? `<video src="${url}" data-seek="${seek}" controls muted playsinline autoplay preload="auto"></video>`
+      : c.remote ? `<p class="small muted">Saving the clip…</p>` : c.clip || c.waiting ? `<p class="small muted">Getting the clip from the phone${parts ? ` (${Math.round(100 * parts.got / Math.max(1, parts.bufs.length))}%)` : ""}…</p>` : c.src === "cam" ? `<p class="small muted">No clip for this attempt.</p>` : ""}
     <form class="row" data-form="w-fix">${c.ok ? "" : btn("ok", "Score is right", "primary")}<input id="w-fix" inputmode="numeric" autocomplete="off" placeholder="${esc(c.hint)}" style="max-width:120px" aria-label="Right score"><button type="submit">Fix it</button>${btn("del", "Not an attempt", "ghost")}</form></article>`;
 }
-function watchStop() { if (watch && watch.peer) try { watch.peer.destroy(); } catch (e) {} watch = null; }
+function watchStop() { if (watch) watchRecStop(watch); if (watch && watch.peer) try { watch.peer.destroy(); } catch (e) {} watch = null; }
 function watchCardHTML() {
   const st = watch && watch.state;
   if (!st) return `<article class="card"><p class="muted">The score card appears here once the phone connects.</p></article>`;
@@ -1546,7 +1602,7 @@ function viewWatch() {
       <div class="paircode">${w.peer && w.peer.open ? w.code : "······"}</div><p class="small muted" id="wstatus">${esc(w.status)}</p><div class="row"><button class="ghost" data-act="w-new">New code</button></div></article>`}
     ${w.conn ? `<div class="row between"><div class="seg" role="group" aria-label="Show">${seg("both", "Feed and score card")}${seg("feed", "Feed")}${seg("card", "Score card")}</div><span class="small muted" id="wstatus">${esc(w.status)}</span></div>` : ""}
     <div class="watchgrid" data-v="${w.view}"><div class="wfeed"><video id="wvideo" playsinline muted autoplay${w.stream ? "" : " hidden"}></video><p id="wnofeed"${w.stream ? " hidden" : ""}>${w.conn ? "No camera feed. Turn on Track with camera to send it." : "The live feed appears here."}</p></div>
-    <div class="wside"><div id="wcheck"></div><div class="wcard" id="wcard">${watchCardHTML()}</div><div id="wctl">${watchCtlHTML()}</div></div></div>`;
+    <div class="wside"><div id="wcheck"></div><div id="wwrong"></div><div class="wcard" id="wcard">${watchCardHTML()}</div><div id="wctl">${watchCtlHTML()}</div></div></div>`;
 }
 // Controls for the phone, for when it's out of reach on its stand. Each button is sent to the phone,
 // which presses its own button of the same name, so it behaves exactly as if tapped there.
@@ -1585,6 +1641,8 @@ function renderWatch() {
   const st = watch.state, ck = st && st.check, wc = $("#wcheck");
   const ckey = ck ? [ck.ei, ck.si, ck.id, ck.score, ck.ok, ck.waiting, !!ck.clip, !!(watch.clips && watch.clips[ck.id]), watch.parts && watch.parts[ck.id] ? Math.round(10 * watch.parts[ck.id].got / watch.parts[ck.id].bufs.length) : -1].join() : "";
   if (wc && (wc.dataset.k !== ckey || (!ck && wc.innerHTML))) { wc.dataset.k = ckey; wc.innerHTML = watchCheckHTML(); seekClips(); }
+  const ww = $("#wwrong"), nw = (watch.wrong || []).length;
+  if (ww && ww.dataset.n !== String(nw)) { ww.dataset.n = nw; ww.innerHTML = nw ? `<article class="card"><button class="ghost" data-act="wrong-zip-w">Download ${nw} clip${nw > 1 ? "s" : ""} the camera got wrong</button> <span class="small muted">zip with the right scores: send it in to improve the camera</span></article>` : ""; }
   const s = $("#wstatus"); if (s) s.textContent = watch.status;
   const v = $("#wvideo"), nf = $("#wnofeed");
   if (v) { if (watch.stream && v.srcObject !== watch.stream) { v.srcObject = watch.stream; v.play().catch(() => {}); } v.hidden = !watch.stream; }
@@ -1604,13 +1662,14 @@ function liveState() {
     timer: running ? (rem >= 0 ? mmss(Math.ceil(rem)) : "+" + mmss(-rem)) : "", over: running && rem < 0,
     scores: e ? e.scores : [], n: s ? s.n : 0, avg: s ? (e.metric === "outof" ? s.avgV + "%" : s.avg.toFixed(1)) : null, best: s ? s.best : null, next: nx ? nx.name : "",
     last: r.idx === r.items.length - 1, metric: e ? e.metric : "", hint: e && e.metric === "outof" ? "Pots out of " + e.per : "Score",
-    unchk: e ? attOf(e).map((a, i) => a.ok ? -1 : i).filter(i => i >= 0) : [], check: checkState(r), ...extra };
+    unchk: e ? attOf(e).map((a, i) => a.ok ? -1 : i).filter(i => i >= 0) : [], check: checkState(r),
+    clipIds: e ? attOf(e).filter(a => a.remote && a.id).map(a => ({ id: a.id, ago: a.ago || 0 })).slice(-5) : [], wrong: cam.wrongRemote.slice(-15), ...extra };
 }
 function checkState(r) {
   const c = checkTarget(r); if (!c) return null;
   const e = r.entries[c.ei], a = attOf(e)[c.si], clip = a.id && cam.clipFor[a.id];
   return { ei: c.ei, si: c.si, id: a.id || "", drill: e.drillName, n: c.si + 1, score: e.scores[c.si], src: a.src, ok: !!a.ok, fixed: !!a.fixed,
-    pots: a.pots || [], hint: e.metric === "outof" ? "Pots out of " + e.per : "Score", clip: clip ? { seek: clip.seek } : null, waiting: !!(a.id && cam.clipPending[a.id]) };
+    pots: a.pots || [], hint: e.metric === "outof" ? "Pots out of " + e.per : "Score", clip: clip ? { seek: clip.seek } : null, waiting: !!(a.id && cam.clipPending[a.id]), remote: !!a.remote };
 }
 async function linkConnect(code) {
   code = String(code || "").replace(/\D/g, "");
@@ -1623,7 +1682,7 @@ async function linkConnect(code) {
     const c = peer.connect(PEER_PREFIX + code, { reliable: true }); link.conn = c;
     c.on("open", () => { link.status = "Showing on the other screen"; link.last = ""; linkSend(); linkVideo(); renderLink(); toast("Connected to the other screen"); });
     c.on("data", linkRemote);
-    c.on("close", () => { if (link.conn === c) { link.status = "Disconnected"; link.conn = null; renderLink(); } });
+    c.on("close", () => { if (link.conn === c) { link.status = "Disconnected"; link.conn = null; renderLink(); if (cam.scorer && draft && draft.phase === "running") clipStart(); } });
   });
   clearInterval(link.timer); link.timer = setInterval(() => { linkSend(); linkVideo(); }, 500);
 }
@@ -1679,6 +1738,7 @@ function linkVideo() {
   if (cam.stream && (!link.call || link.callStream !== cam.stream)) {
     if (link.call) try { link.call.close(); } catch (e) {}
     link.call = link.peer.call(PEER_PREFIX + link.code, cam.stream); link.callStream = cam.stream;
+    clipStop();
   } else if (!cam.stream && link.call) { try { link.call.close(); } catch (e) {} link.call = null; link.callStream = null; }
 }
 function linkStop() {
@@ -1856,6 +1916,7 @@ document.addEventListener("click", ev => {
     case "att-close": r.review = null; r.fixing = null; r.input = ""; persistRun(); renderScores(); break;
     case "att-ok": attOk(r, +b.dataset.e, i); persistRun(); renderScores(); break;
     case "keep-wrong": LS.set("snk.keepwrong", b.checked); break;
+    case "wrong-zip-w": if (watch && watch.wrong) wrongZip(watch.wrong).then(z => saveBlob(z, `camera-corrections-${todayISO()}.zip`)); break;
     case "wrong-zip": wrongZip().then(z => saveBlob(z, `camera-corrections-${todayISO()}.zip`)); break;
     case "att-okall": r.entries.forEach(e => attOf(e).forEach(a => { if (!a.ok) { a.ok = true; clipDone(a); } })); r.review = null; persistRun(); renderScores(); break;
     case "att-fix": {
