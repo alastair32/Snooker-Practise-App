@@ -291,6 +291,11 @@
         for (let i = rolled.length - 1; i >= 0; i--) if (rolled[i].path.length < short) rolled.splice(i, 1);
         for (let i = potTracks.length - 1; i >= 0; i--) if (potTracks[i].tr.path.length < short) potTracks.splice(i, 1);
       }
+      // a colour still seen just where it was (and whose spot didn't empty and fill again) only had its spot brushed
+      for (let i = spotOff.length - 1; i >= 0; i--) {
+        const c = spotOff[i], w = W.find(w => w.type === c && !w.hidden && !missing.includes(w) && dist(w, this.spots[c]) < 20);
+        if (w && !spotOn.includes(c)) { spotOff.splice(i, 1); this.spotWatch.keep(c); }
+      }
       const objMoved = rolled.some(tr => tr.white < tr.path.length / 2) || spotOff.length > 0;
       // a coloured ball seen running a long way in the open is a shot, even if it was first picked up away from where it rested
       const longRun = wasActive && this.tracks.some(tr => {
@@ -326,16 +331,16 @@
           const farFromPockets = this.cal.pockets.every(p => Math.hypot(p[0] - e[1], p[1] - e[2]) > 35);
           return Math.hypot(e[1] - seg[0][1], e[2] - seg[0][2]) >= 40 && (still(4) || (farFromPockets && still(9))) &&
             !D.some(d => Math.hypot(d.x - e[1], d.y - e[2]) < 10); });
-        const cameToRest = () => { const tr = restEnds.shift(); return !!tr; };
+        const cameToRest = () => { const tr = restEnds.shift(); return !!tr; }, rested = new Set();
         for (const c of struck ? spotOff : []) {
           const w = W.filter(w => w.type === c).sort((x, y) => dist(x, this.spots[c]) - dist(y, this.spots[c]))[0];
           const fromSpot = potTracks.some(p => !p.used && !p.white && dist(p.start, this.spots[c]) < 30);
           if (w && moved.has(w) && dist(w, this.spots[c]) > 20 && !fromSpot) continue;   // knocked off its spot, still on the table
-          if (!fromSpot && cameToRest()) { if (w) w.hidden = true; continue; }
+          if (!fromSpot && cameToRest()) { if (w) { w.hidden = true; rested.add(w); } continue; }
           // followed from its spot to a ball now resting there that nothing else accounts for (its colour can read
           // wrongly in shadow, so it wasn't matched by colour): it was knocked there
           if (w && !fromSpot) {
-            const tr = rolled.find(tr => Math.hypot(tr.path[0][1] - this.spots[c].x, tr.path[0][2] - this.spots[c].y) < 15);
+            const tr = rolled.find(tr => Math.hypot(tr.path[0][1] - this.spots[c].x, tr.path[0][2] - this.spots[c].y) < 20);
             const e = tr && tr.path[tr.path.length - 1], di = e ? [...free].find(i => Math.hypot(D[i].x - e[1], D[i].y - e[2]) < 10) : undefined;
             if (di !== undefined) { free.delete(di); Object.assign(w, { x: D[di].x, y: D[di].y, hidden: false }); moved.add(w); continue; }
           }
@@ -344,11 +349,11 @@
           pots.push(this._pot(w || { type: c }, pt)); offSpots.push(this.spots[c]); this.lastSpotPot = { colour: c, t };
         }
         for (const w of gone) {
-          if (pots.some(p => p.ball === w)) continue;
+          if (pots.some(p => p.ball === w) || rested.has(w)) continue;
           // the cue ball only counts as potted when it is seen going into a pocket; otherwise the player hides it
           if (w.type === "cue" && !potTracks.some(p => p.white && !p.used)) { w.hidden = true; continue; }
           if (offSpots.some(sp => dist(sp, w) < 15)) { this.world = this.world.filter(x => x !== w); continue; }   // was that colour all along
-          const pt = potTracks.find(p => !p.used && dist(p.start, w) < 25) || null;
+          const pt = potTracks.filter(p => !p.used && this._reach(w, p, 25) < Infinity).sort((a, b) => this._reach(w, a, 25) - this._reach(w, b, 25))[0] || null;
           if (!pt && w.type !== "cue" && cameToRest()) { w.hidden = true; continue; }
           // reds placed by guesswork inside a cluster are only potted when seen going into a pocket
           if (!pt && w.guessed) { w.hidden = true; continue; }
@@ -362,7 +367,8 @@
           if (cand) { pt.used = true; pots.push(this._pot(cand, pt)); }
           // a red-looking ball followed from rest into a pocket when a red is due, with no red known there:
           // reds put back into the line by hand can't be seen one by one, so trust the track
-          else if (this.prefer === "red" && pt.lab[1] >= 108) { pt.used = true; pots.push(this._pot({ type: "red", guessed: true }, pt)); }
+          // (when a colour is due, only right by the reds: then it is the next attempt starting)
+          else if (pt.lab[1] >= 108 && (this.prefer === "red" || W.some(w => w.hidden && w.type === "red" && dist(w, pt.start) < 100))) { pt.used = true; pots.push(this._pot({ type: "red", guessed: true }, pt)); }
         }
         for (const p of pots) { this.world = this.world.filter(w => w !== p.ball); if (p.type !== "red" && p.type !== "cue") this.potted.push(p.type); }
         this.colourPots = (this.colourPots || 0) + pots.filter(p => COLOURS.includes(p.type)).length;
@@ -398,10 +404,19 @@
     _hiddenSource(W, pt, pots) {
       const warm = pt.lab[1] >= 108;
       const fam = t => ["red", "pink", "brown", "yellow"].includes(t) === warm;
-      const cands = W.filter(w => w.hidden && w.type !== "cue" && !pots.some(p => p.ball === w) && fam(w.type) && dist(w, pt.start) < 60 &&
+      const reach = w => this._reach(w, pt);
+      const cands = W.filter(w => w.hidden && w.type !== "cue" && !pots.some(p => p.ball === w) && fam(w.type) && reach(w) < Infinity &&
         !(COLOURS.includes(w.type) && this.spotWatch.on(w.type)));
       const pref = t => this.prefer === "colour" ? (t === "red" ? 1 : 0) : this.prefer === "red" ? (t === "red" ? 0 : 1) : 0;
-      return cands.sort((a, b) => pref(a.type) - pref(b.type) || dist(a, pt.start) - dist(b, pt.start))[0] || null;
+      return cands.sort((a, b) => pref(a.type) - pref(b.type) || reach(a) - reach(b))[0] || null;
+    }
+    // How well a ball at w accounts for a ball followed into a pocket: near where it was first seen, or (a fast
+    // ball is only picked up some way out) on the line it came along. Infinity: it doesn't.
+    _reach(w, pt, near = 60) {
+      const P = pt.tr.path, k = Math.min(P.length - 1, 2), dx = P[k][1] - P[0][1], dy = P[k][2] - P[0][2], n = Math.hypot(dx, dy) || 1;
+      const d = dist(w, pt.start); if (d < near) return d;
+      const back = -((w.x - pt.start.x) * dx + (w.y - pt.start.y) * dy) / n, perp = Math.abs((w.x - pt.start.x) * dy - (w.y - pt.start.y) * dx) / n;
+      return back > 0 && back < 160 && perp < 12 ? near + perp : Infinity;
     }
     _pot(w, pt) {
       const r = { ball: w, type: w.type, pocket: pt ? pt.pocket : null, aimed: pt ? pt.aimed : null };
@@ -432,7 +447,8 @@
           type = best && labDist(b.lab, this.proto[best]) < labDist(b.lab, this.proto[spot]) ? best : spot;
         } else if (potted.length && !spot) {
           // no free spot: placed as near its own spot as possible towards the top cushion
-          const near = potted.filter(c => dist(b, this.spots[c]) < 40);
+          // (a red-looking ball by the line of reds is a red come loose from it, not the black)
+          const near = potted.filter(c => dist(b, this.spots[c]) < 40 && !(this.proto.red && labDist(b.lab, this.proto.red) < labDist(b.lab, this.proto[c])));
           if (near.length) type = near.sort((x, y) => dist(b, this.spots[x]) - dist(b, this.spots[y]))[0];
         }
         if (!type) type = this._classify(b);
@@ -526,9 +542,14 @@
     feed(e) {
       if (e.type === "reset") { if (this.cur && this.metric !== "outof") this._end(e.t, "reset"); this._expect([]); return; }
       if (e.type !== "shot") return;
-      if (!this.cur) this._start(e.start);
-      const a = this.cur; a.shots++;
       const legal = e.legalPots;
+      // reds and colours alternate, so only reds going when a colour is due is a new attempt: the last one ended
+      // without a miss (e.g. the cue ball left tight on the line and picked up to start again)
+      const ex = this.tracker && this.tracker.expect;
+      if (this.cur && this.metric === "break" && ex && ex.red && this.tracker.prefer === "colour" && this.cur.pots.length &&
+          legal.length && legal.every(p => p.type === "red") && !e.inOff) { this._end(this.cur.lastT, "reset"); this._expect([]); }
+      if (!this.cur) this._start(e.start);
+      const a = this.cur; a.shots++; a.lastT = e.t;
       if (this.metric === "outof") {
         if (legal.length) a.score++;
         a.pots.push(...legal.map(p => p.type));
@@ -539,7 +560,8 @@
       // clearing the colours they must go in order, so a pot is the colour due (whatever the camera took it for);
       // the colours due after it seen going too are two shots seen as one (the table never settled between them)
       const due = this.tracker && this.tracker.due, ORDER = ["yellow", "green", "brown", "blue", "pink", "black"];
-      let got = legal;
+      // a red and a colour down in one settle went in the order the drill expects (red first when a red was due)
+      let got = this.tracker && this.tracker.prefer && !due ? legal.slice().sort((x, y) => ((x.type === "red") !== (this.tracker.prefer === "red")) - ((y.type === "red") !== (this.tracker.prefer === "red"))) : legal;
       if (due) {
         const types = legal.map(p => p.type); let n = 1;
         while (n < legal.length && ORDER[ORDER.indexOf(due) + n] && types.includes(ORDER[ORDER.indexOf(due) + n])) n++;
